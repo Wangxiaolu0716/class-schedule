@@ -31,14 +31,14 @@
 
 ## 截图
 
-有课的一周——本周课程是亮色，非本周课程淡显并标注「非本周」：
-
-![有课的一周](docs/screenshots/week-with-class.jpg)
-
-没课的一周——整屏淡显，但每门课的位置和形状都还在，
-一眼能看出「这周没课」，而不是「数据丢了」：
-
-![没课的一周](docs/screenshots/week-no-class.jpg)
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/week-with-class.jpg" width="300"><br>
+<sub>有课的一周：本周课程是亮色，非本周淡显并标注「非本周」</sub></td>
+<td align="center"><img src="docs/screenshots/week-no-class.jpg" width="300"><br>
+<sub>没课的一周：整屏淡显，但每门课的位置和形状都还在</sub></td>
+</tr>
+</table>
 
 ## 功能
 

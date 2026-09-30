@@ -145,10 +145,16 @@ $payload = @{
     prerelease = [bool]$Prerelease
 } | ConvertTo-Json -Depth 4
 
+# 必须显式转成 UTF-8 字节再发。
+# PowerShell 5.1 的 Invoke-RestMethod 在 -Body 传字符串时按 Windows-1252 编码，
+# 中文会被替换成「?」，GitHub 端再按 UTF-8 解码就变成一串问号。
+$payloadBytes = [Text.Encoding]::UTF8.GetBytes($payload)
+
 try {
     $release = Invoke-RestMethod -Method Post `
         -Uri "https://api.github.com/repos/$Repo/releases" `
-        -Headers $headers -ContentType 'application/json' -Body $payload
+        -Headers $headers -ContentType 'application/json; charset=utf-8' `
+        -Body $payloadBytes
 } catch {
     $detail = $_.ErrorDetails.Message
     if ($detail -match 'already_exists') {
