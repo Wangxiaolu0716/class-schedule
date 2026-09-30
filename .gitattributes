@@ -1,3 +1,4 @@
 # 统一在仓库里存 LF，检出时由 Git 按平台自动转换。
 # 不写这条的话，Windows 上提交的文件到了 macOS/Linux 可能整仓都显示成已修改。
 * text=auto
+*.ps1 text eol=crlf
