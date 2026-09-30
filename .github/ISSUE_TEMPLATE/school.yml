@@ -1,0 +1,81 @@
+name: 提交一所学校
+description: 把你的学校加入 App 的学校列表，让别人也能导入课表
+title: "[学校] "
+labels: ["school-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢帮忙扩充学校列表！
+
+        列表是**人工审核**的，我会亲自在真机上试一遍再入库。
+        **没有解析器也没关系** —— 可以先按「未知」收进去，让有这个学校教务系统的人接着试。
+
+        提交前请确认：地址是**登录页**的完整地址，且**不含你自己的账号、学号或任何个人信息**。
+
+  - type: input
+    id: school-name
+    attributes:
+      label: 学校名称
+      description: 请写全称
+      placeholder: 例如：宁波城市职业技术学院
+    validations:
+      required: true
+
+  - type: input
+    id: login-url
+    attributes:
+      label: 教务系统登录入口
+      description: 登录页的完整地址。统一身份认证（CAS）页也可以，把完整带参数的地址贴上来
+      placeholder: https://...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system-type
+    attributes:
+      label: 教务系统类型
+      description: 不确定就选「未知」，我会看样本判断
+      options:
+        - 未知
+        - 正方 EAMS（courseTableForStd.action）
+        - 正方新版 jwglxt（kblist_table）
+        - 其它（强智 / URP / 青果 / 自研 …）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: verified-level
+    attributes:
+      label: 你验证到什么程度？
+      description: 如实说就行，没验证过也可以提交
+      options:
+        - 能导入课表（我已经试过，能用）
+        - 能登录，但导不进课表
+        - 只知道地址，还没试过
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明
+      description: |
+        有用的信息，例如：
+        - 必须切换「电脑模式」才能看到课表？
+        - 登录后进课表要经过几层跳转？
+        - 平时用的是哪个入口（教务处 / 信息门户 / 微信企业号）？
+        - 遇到的具体现象（白屏 / 提示找不到课表 / 解析出 0 门课 …）
+      placeholder: 可选，但写得越具体我越好判断
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 上面的地址是我从浏览器地址栏复制的完整登录页地址
+          required: true
+        - label: 内容里不含我或他人的账号、学号、身份证号等个人信息
+          required: true

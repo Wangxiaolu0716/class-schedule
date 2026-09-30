@@ -1,0 +1,117 @@
+<!-- ===== frame depth=0 ===== -->
+<html><head></head><body><div id="toolbar20826294511"></div>
+<script type="text/javascript">
+  bar = bg.ui.toolbar("toolbar20826294511",'我的课表');
+  
+  bar.addHr();
+</script><div style="background: url('/eams/static/images/semesterBarBg.png') repeat-x scroll 50% 50% #DEEDF7;border: 1px solid #AED0EA;color: #222222;font-weight: bold;height:28px;">
+
+<form id="courseTableForm" name="courseTableForm" action="/eams/courseTableForStd.action" method="post" target="">
+
+<div style="margin-left:4px;margin-top:2px;float:left;line-height:22px;height:22px;">
+		<input type="hidden" name="ignoreHead" value="1">
+	<label for="courseTableType" class="title">课表类型:</label>
+	<select id="courseTableType" name="setting.kind" onchange="searchTable()" style="width:120px">
+		<option value="std">学生课表</option>
+		<option value="class">班级课表</option>
+	</select>
+	|
+	<label for="startWeek" class="title">选择教学周:</label>
+	<select id="startWeek" name="startWeek" onchange="searchTable()">
+			<option value="">全部</option>
+    	<option value="1">第1周</option><option value="2">第2周</option><option value="3">第3周</option><option value="4">第4周</option><option value="5">第5周</option><option value="6">第6周</option><option value="7">第7周</option><option value="8">第8周</option><option value="9">第9周</option><option value="10">第10周</option><option value="11">第11周</option><option value="12">第12周</option><option value="13">第13周</option><option value="14">第14周</option><option value="15">第15周</option><option value="16">第16周</option><option value="17">第17周</option><option value="18">第18周</option><option value="19">第19周</option><option value="20">第20周</option>
+    </select>
+    |
+
+</div>
+<div style="margin-left:10px;margin-top:2px;float:left;line-height:18px;height:22px;">
+<label for="semesterBar20826294511">项目:</label>
+<select id="semesterBar20826294511" name="project.id">
+	
+</select>
+	<label for="semesterBar20826294511Semester" class="title">学年学期:</label>
+	<input id="semesterBar20826294511Semester" class="calendar-text calendar-text-state-default" title="学年学期" type="text" value="" readonly="true">
+	<div class="calendar-bar" tabindex="-1">
+		<input id="semesterCalendar_target" type="hidden" name="semester.id" value="">
+		<a name="prev" href="javascript:void(0)" style="display:none"><img src="/eams/static/themes/default/images/semesterCalendar_prev.gif"></a>
+		<input id="semesterCalendar_year" class="calendar-bar-input" type="text" index="0" value="" maxlength="4" size="4" readonly="true" style="display:none"><span style="display:none">学年</span>
+		<a name="next" href="javascript:void(0)" style="display:none"><img src="/eams/static/themes/default/images/semesterCalendar_next.gif"></a>
+		
+		<a name="prev" href="javascript:void(0)" style="display:none"><img src="/eams/static/themes/default/images/semesterCalendar_prev.gif"></a>
+		<input id="semesterCalendar_term" class="calendar-bar-input" type="text" index="0" value="" size="4" readonly="true" style="display:none"><span style="display:none">学期</span>
+		<a name="next" href="javascript:void(0)" style="display:none"><img src="/eams/static/themes/default/images/semesterCalendar_next.gif"></a>
+		<a href="javascript:void(0)" id="allSemester" style="display:none"></a>
+		
+		<table id="semesterCalendar_yearTb" class="semesterCalendar_yearTb">
+			<tbody>
+			</tbody>
+		</table>
+		<!-- 两个table之间的空div用来解决IE6 下莫名其妙重复渲染最后一个学年td中的文字的bug-->
+		<div></div>
+		<table id="semesterCalendar_termTb" class="semesterCalendar_termTb">
+			<tbody>
+			</tbody>
+		</table>
+	</div>
+	<script type="text/javascript" src="/eams/static/scripts/semesterCalendar_zh.js"></script>
+	<script type="text/javascript">
+		if(jQuery.struts2_jquery.scriptCache["/scripts/semesterCalendar.js?s2j="+jQuery.struts2_jquery.version]){
+			jQuery("#semesterBar20826294511Semester").semesterCalendar({empty:"false",onChange:"",value:"279"},"searchTable()");
+		}else{
+			jQuery.struts2_jquery.require("/scripts/semesterCalendar.js",function(){
+				jQuery("#semesterBar20826294511Semester").semesterCalendar({empty:"false",onChange:"",value:"279"},"searchTable()");
+			},'/eams/static');
+		}
+
+	</script>
+<script type="text/javascript">
+		jQuery("#semesterBar20826294511").val(jQuery.post("/eams/dataQuery.action",{dataType:"projectId"}));
+		jQuery("#semesterBar20826294511").hide();
+		jQuery("#semesterBar20826294511").prev().hide();
+		var semesterBar20826294511res = jQuery.post("/eams/dataQuery.action",{entityId:""},function(){
+			if(semesterBar20826294511res.status==200){
+				jQuery("#semesterBar20826294511").empty();
+				if(semesterBar20826294511res.responseText!=""){
+					jQuery("#semesterBar20826294511").append(semesterBar20826294511res.responseText);
+				}
+			}
+		},"text");
+	jQuery("#semesterBar20826294511").change(function(){
+		jQuery.post("/eams/dataQuery!changeProjectId.action",{projectId:this.value},function(){
+			jQuery("#semesterBar20826294511Semester")[0].getSemesters(jQuery("#semesterBar20826294511Semester"),{empty:"false",value:"279"},"searchTable()");
+		},"text");
+	});
+</script>
+<input type="submit" value="切换学期" onclick="searchTable();return false;">
+</div>
+
+</form>
+</div><table class="indexpanel">
+	<tbody><tr>
+		<td class="index_content">
+<div id="contentDiv" class="ajax_container"></div>
+
+		</td>
+	</tr>
+</tbody></table>
+<script language="JavaScript">
+	var form = document.courseTableForm;
+   	function searchTable(){
+   		if(jQuery("#courseTableType").val()=="std"){
+   			bg.form.addInput(form,"ids","123456");
+   		}else{
+   			bg.form.addInput(form,"ids","3651");
+   		}
+       	bg.form.submit(form,"courseTableForStd!courseTable.action","contentDiv");
+   	}
+   	
+	function confirmCourseTable(){
+		if(confirm("课表是否确认无误?")){
+			form.target="main";
+			bg.form.addInput(form,"courseTableCheckId","")
+      		bg.form.submit(form,"courseTableForStd!confirmCourseTable.action");
+      		form.target="contentDiv";
+      	}
+	}
+ </script>
+</body></html>
