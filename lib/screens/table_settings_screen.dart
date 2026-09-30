@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../import/course_cache.dart';
 import '../models/course.dart';
 import '../models/table_config.dart';
+import '../theme/theme_mode.dart';
 import 'parse_diagnostics_screen.dart';
 
 /// 课表设置页。
@@ -110,6 +111,17 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
             ),
           ),
           _buildUnscheduledTile(),
+          _sectionHeader('主题'),
+          // 全局配色，改完立即生效并落盘
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: appThemeMode,
+            builder: (context, mode, _) => ListTile(
+              title: const Text('主题模式'),
+              subtitle: Text(ThemeModeStore.label(mode)),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _pickThemeMode,
+            ),
+          ),
           _sectionHeader('课表外观'),
           SwitchListTile(
             title: const Text('显示周六'),
@@ -341,6 +353,39 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
     );
     if (picked == null) return;
     await _update(_config.copyWith(weekStartDay: picked));
+  }
+
+  /// 选主题模式：白天 / 夜晚 / 跟随系统。
+  ///
+  /// 当场生效（写全局 notifier），再落盘，下次启动照旧。
+  Future<void> _pickThemeMode() async {
+    final current = appThemeMode.value;
+    final picked = await showDialog<ThemeMode>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('主题模式'),
+        children: [
+          for (final mode in ThemeModeStore.pickOrder)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, mode),
+              child: Row(
+                children: [
+                  Expanded(child: Text(ThemeModeStore.label(mode))),
+                  if (mode == current)
+                    Icon(
+                      Icons.check,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    appThemeMode.value = picked;
+    await const ThemeModeStore().save(picked);
   }
 
   Future<void> _pickNumber({

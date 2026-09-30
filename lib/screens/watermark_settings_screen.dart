@@ -94,8 +94,11 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
     );
   }
 
-  /// 预览：直接用同一套画笔，看到的就是屏幕上真实的效果
+  /// 预览：直接用同一套画笔，看到的就是屏幕上真实的效果。
+  ///
+  /// 底色与文字跟着主题走，否则深色模式下这块预览会亮得像贴了张白纸。
   Widget _buildPreview() {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: ClipRRect(
@@ -105,13 +108,13 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
           child: AppWatermark(
             settings: _settings,
             child: Container(
-              color: const Color(0xFFF4F5FA),
+              color: scheme.surfaceContainerHighest,
               alignment: Alignment.center,
               child: Text(
                 '预览',
                 style: TextStyle(
                   fontSize: 15,
-                  color: Colors.black.withValues(alpha: 0.35),
+                  color: scheme.onSurface.withValues(alpha: 0.35),
                 ),
               ),
             ),

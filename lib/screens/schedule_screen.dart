@@ -553,11 +553,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Android 10+ 默认会给系统导航栏加一层半透明底衬，
       // 在浅色界面下显脏，这里关掉
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         systemNavigationBarContrastEnforced: false,
         systemNavigationBarColor: Colors.transparent,
         systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarIconBrightness: Brightness.dark,
+        // 深色下要换成浅色图标，否则黑底黑图标看不见
+        systemNavigationBarIconBrightness:
+            _isDark ? Brightness.light : Brightness.dark,
       ),
       child: Scaffold(
         appBar: AppBar(
@@ -772,9 +774,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Container(
       width: _labelWidth,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.black12, width: 0.5),
+          bottom: BorderSide(color: _gridLine, width: 0.5),
         ),
       ),
       child: firstDay == null
@@ -795,10 +797,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(vertical: 4),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(
-          left: BorderSide(color: Colors.black12, width: 0.5),
-          bottom: BorderSide(color: Colors.black12, width: 0.5),
+          left: BorderSide(color: _gridLine, width: 0.5),
+          bottom: BorderSide(color: _gridLine, width: 0.5),
         ),
       ),
       child: Column(
@@ -891,9 +893,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Widget _buildGridLines(int periodsPerDay, int dayCount) {
-    const border = Border(
-      left: BorderSide(color: Colors.black12, width: 0.5),
-      top: BorderSide(color: Colors.black12, width: 0.5),
+    final border = Border(
+      left: BorderSide(color: _gridLine, width: 0.5),
+      top: BorderSide(color: _gridLine, width: 0.5),
     );
     return Column(
       children: [
@@ -902,7 +904,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: Row(
               children: [
                 for (var day = 0; day < dayCount; day++)
-                  const Expanded(
+                  Expanded(
                     child: DecoratedBox(
                       decoration: BoxDecoration(border: border),
                     ),
@@ -990,9 +992,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 fontSize: 10.5,
                 height: 1.15,
                 fontWeight: FontWeight.w600,
-                color: isThisWeek
-                    ? const Color(0xFF111827)
-                    : const Color(0xFF9AA2AE),
+                // 浅色格子配深字，深色格子配浅字
+                color: _cellTextColor(isThisWeek),
               ),
             ),
             if (session.room.isNotEmpty)
@@ -1003,16 +1004,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 style: TextStyle(
                   fontSize: 8.5,
                   height: 1.1,
-                  color: isThisWeek
-                      ? const Color(0xFF374151)
-                      : const Color(0xFFAFB6C1),
+                  color: _cellSubTextColor(isThisWeek),
                 ),
               ),
             const Spacer(),
             if (!isThisWeek)
-              const Text(
+              Text(
                 '非本周',
-                style: TextStyle(fontSize: 8, color: Color(0xFFAFB6C1)),
+                style: TextStyle(
+                  fontSize: 8,
+                  color: _cellSubTextColor(false),
+                ),
               ),
           ],
         ),
@@ -1020,34 +1022,57 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  /// 格子颜色：自建课程用自选色，日程用标签色，导入课程按课名哈希生成。
-  ///
-  /// 自建色同样要在「非本周」时降饱和、提明度，才能和导入课程保持同一套
-  /// 视觉规则——靠饱和度与明暗区分是否本周要上。
-  Color _sessionColor(CourseSession session, {required bool faded}) {
-    final custom = _customColors[session.courseId];
-    if (custom == null) return _colorFor(session.name, faded: faded);
-    final color = Color(custom);
-    if (!faded) return color;
-    return HSLColor.fromColor(color)
-        .withSaturation(0.10)
-        .withLightness(0.96)
-        .toColor();
+  /// 是否深色主题。整套格子配色都以它为基准切换。
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+
+  /// 网格线：浅色下是淡黑，深色下得换成淡白，否则整片网格看不见
+  Color get _gridLine => _isDark ? Colors.white12 : Colors.black12;
+
+  /// 格子里的课名颜色：浅色格子配深字，深色格子配浅字
+  Color _cellTextColor(bool isThisWeek) {
+    if (_isDark) {
+      return isThisWeek ? const Color(0xFFE6EAF2) : const Color(0xFF8E97A6);
+    }
+    return isThisWeek ? const Color(0xFF111827) : const Color(0xFF9AA2AE);
   }
 
-  /// 按课程名生成稳定的浅色背景，同一门课每次颜色一致。
+  /// 格子里的教室、「非本周」等次要文字颜色
+  Color _cellSubTextColor(bool isThisWeek) {
+    if (_isDark) {
+      return isThisWeek ? const Color(0xFFBCC4D1) : const Color(0xFF767F8D);
+    }
+    return isThisWeek ? const Color(0xFF374151) : const Color(0xFFAFB6C1);
+  }
+
+  /// 格子颜色：自建课程用自选色，日程用标签色，导入课程按课名哈希生成。
   ///
-  /// 本周课程用柔和的浅色块（中低饱和 + 高明度），长时间看不刺眼；
-  /// 非本周课程再降饱和、提明度，靠饱和度与明暗区分是否本周要上。
-  Color _colorFor(String name, {bool faded = false}) {
+  /// 自建色同样要跟「是否本周」走同一套视觉规则——靠饱和度与明暗区分
+  /// 是否本周要上，否则自建条目会在一屏里显得格格不入。
+  Color _sessionColor(CourseSession session, {required bool faded}) {
+    final custom = _customColors[session.courseId];
+    final base = custom == null ? _colorFor(session.name) : Color(custom);
+    final hsl = HSLColor.fromColor(base);
+    if (_isDark) {
+      // 深色下反过来：本周是偏亮的深色块，非本周再压暗一档。
+      // 不这么做的话，一屏浅色块在夜里非常刺眼。
+      return (faded
+              ? hsl.withSaturation(0.18).withLightness(0.20)
+              : hsl.withSaturation(0.38).withLightness(0.32))
+          .toColor();
+    }
+    // 浅色下本周用中低饱和 + 高明度，非本周再降饱和、提明度
+    return faded
+        ? hsl.withSaturation(0.10).withLightness(0.96).toColor()
+        : base;
+  }
+
+  /// 按课程名生成稳定的基准色，同一门课每次颜色一致。
+  Color _colorFor(String name) {
     var hash = 0;
     for (final unit in name.codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    final hue = (hash % 360).toDouble();
-    return faded
-        ? HSLColor.fromAHSL(1, hue, 0.10, 0.96).toColor()
-        : HSLColor.fromAHSL(1, hue, 0.45, 0.89).toColor();
+    return HSLColor.fromAHSL(1, (hash % 360).toDouble(), 0.45, 0.89).toColor();
   }
 }
 

@@ -17,9 +17,13 @@ class AppWatermark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 深色背景上黑水印等于看不见，跟着主题翻成白色
+    final color = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black;
     return CustomPaint(
       // 用前景画笔：先画 child，再把水印叠在上面
-      foregroundPainter: WatermarkPainter(settings),
+      foregroundPainter: WatermarkPainter(settings, color: color),
       child: child,
     );
   }
@@ -27,9 +31,13 @@ class AppWatermark extends StatelessWidget {
 
 /// 把水印按倾斜角度平铺满整块画布
 class WatermarkPainter extends CustomPainter {
-  const WatermarkPainter(this.settings);
+  const WatermarkPainter(this.settings, {required this.color});
 
   final WatermarkSettings settings;
+
+  /// 水印本身的颜色。透明度仍由 [settings] 里的值决定，这里只管基色，
+  /// 因为深色主题下黑水印是完全看不见的。
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -40,7 +48,7 @@ class WatermarkPainter extends CustomPainter {
         text: settings.text,
         style: TextStyle(
           fontSize: settings.fontSize,
-          color: Colors.black.withValues(alpha: settings.opacity),
+          color: color.withValues(alpha: settings.opacity),
           fontWeight: FontWeight.w500,
           letterSpacing: 2,
         ),
@@ -70,5 +78,5 @@ class WatermarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant WatermarkPainter oldDelegate) =>
-      oldDelegate.settings != settings;
+      oldDelegate.settings != settings || oldDelegate.color != color;
 }
