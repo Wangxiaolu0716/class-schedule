@@ -37,6 +37,11 @@ param(
     # 目标仓库
     [string]$Repo = 'Wangxiaolu0716/class-schedule',
 
+    # 附件在 release 里的文件名；不传则沿用本地文件名。
+    # Flutter 的产物统一叫 app-release.apk，直接传上去看不出是哪个版本，
+    # 所以发版时建议显式指定，如 nbcc_schedule-1.0.24.apk
+    [string]$AssetName = '',
+
     # release 标题；不传则与 tag 相同
     [string]$Title = '',
 
@@ -158,8 +163,14 @@ $releaseId = $release.id
 
 if ($apk) {
     Write-Step '上传安装包'
-    $fileName = [IO.Path]::GetFileName($apk)
+    # 优先用显式指定的名字；没指定就沿用本地文件名
+    $fileName = if ($AssetName) { $AssetName } else { [IO.Path]::GetFileName($apk) }
+    if (-not $fileName.ToLower().EndsWith('.apk')) { $fileName = "$fileName.apk" }
     $item = Get-Item $apk
+    # 名字里带版本号，下载的人一眼能看出拿到的是哪一版
+    if ($fileName -notmatch [regex]::Escape($Tag.TrimStart('v'))) {
+        Write-Warn "附件名「$fileName」里没有版本号，建议用 -AssetName 指定"
+    }
     try {
         $asset = Invoke-RestMethod -Method Post `
             -Uri "https://uploads.github.com/repos/$Repo/releases/$releaseId/assets?name=$fileName" `
