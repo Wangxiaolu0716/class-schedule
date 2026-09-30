@@ -119,12 +119,18 @@ class JwglxtCourseTableParser implements CourseTableParser {
       if (name.isEmpty) continue;
 
       final room = _value(row, '上课地点');
+      final teacher = _value(row, '教师');
+      final className = _value(row, '教学班');
       sessions.add(
         CourseSession(
-          // 教学班作为课程序号：它在一所学校内唯一，比课程名可靠
-          courseId: _value(row, '教学班'),
+          // 教学班作为课程序号：它在一所学校内唯一，比课程名可靠。
+          // 有的学校（湖州职业技术学院）这一栏叫「教学班组成」、干脆没有
+          // 「教学班：」，那就用课名加教师兜底，否则所有课会挤成同一条
+          courseId: className.isNotEmpty
+              ? className
+              : (teacher.isEmpty ? name : '$name-$teacher'),
           name: name,
-          teacher: _value(row, '教师'),
+          teacher: teacher,
           room: room,
           dayOfWeek: dayOfWeek,
           periods: [for (var p = parsedStart; p <= parsedEnd; p++) p],
@@ -136,8 +142,11 @@ class JwglxtCourseTableParser implements CourseTableParser {
   }
 
   /// 取出 `标签：值` 里的值。值后面紧跟着标签或行尾，所以取到 `<` 为止即可。
+  ///
+  /// 冒号写法各校不一：有的写 `教师：张老师`，有的写 `教师 ：张老师`
+  /// （湖州职业技术学院就是这种），还有的用半角冒号，这里都认。
   static String _value(String row, String label) {
-    final match = RegExp('$label：([^<]*)').firstMatch(row);
+    final match = RegExp('$label\\s*[：:]\\s*([^<]*)').firstMatch(row);
     final value = match?.group(1)?.trim() ?? '';
     // 值里可能还夹着图标 span 留下的空格
     return value.replaceAll(RegExp(r'\s+'), ' ').trim();

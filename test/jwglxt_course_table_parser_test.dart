@@ -99,6 +99,39 @@ void main() {
     });
   });
 
+  group('冒号写法与字段缺失的兼容', () {
+    /// 拼一段最小可用的列表式课表，正文按真实页面那种一堆 font/span 包着来写
+    String pageWithInfo(String info) => '''
+<table id="kblist_table"><tbody id="xq_1">
+<tr><td id="jc_1-1-2" rowspan="1"><span class="festival">1-2</span></td>
+<td><div class="timetable_con text-left">
+<span class="title"><font color="blue">军事理论★</font></span><p>$info</p>
+</div></td></tr></tbody></table>''';
+
+    test('「教师 ：」中间带空格也要能读出来（湖州职业技术学院那种写法）', () {
+      final html = pageWithInfo(
+        '<span class="glyphicon glyphicon-user"></span> 教师 ：曹荣军'
+        '<span class="glyphicon glyphicon-tower"></span> 上课地点：12204(大) '
+        '<span class="glyphicon glyphicon-calendar"></span> 周数：3-10周',
+      );
+      final session = const JwglxtCourseTableParser().parse(html).sessions.single;
+
+      expect(session.teacher, '曹荣军');
+      expect(session.room, '12204(大)');
+      expect(session.weeks, [3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
+    test('没有「教学班：」时用课名加教师兜底，别把所有课挤成一条', () {
+      final html = pageWithInfo(
+        '<span class="glyphicon glyphicon-user"></span> 教师 ：曹荣军'
+        '<span class="glyphicon glyphicon-home"></span> 教学班组成：集成2632;集成2633',
+      );
+      final session = const JwglxtCourseTableParser().parse(html).sessions.single;
+
+      expect(session.courseId, '军事理论-曹荣军');
+    });
+  });
+
   group('周数文本解析', () {
     test('连续区间展开成周次列表', () {
       expect(JwglxtCourseTableParser.parseWeeks('4-17周'), [
