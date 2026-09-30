@@ -1,5 +1,5 @@
 name: nbcc_schedule
-description: "A new Flutter project."
+description: "课表 · Class Schedule：登录学校教务系统，自动把整学期课表抓回手机；支持多种教务系统解析器与自建课程、日程。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
