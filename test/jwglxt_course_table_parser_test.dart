@@ -132,6 +132,49 @@ void main() {
     });
   });
 
+  group('「其它课程」那一行', () {
+    /// 拼一份带「其它课程」的页面。真实页面里那行在 kblist_table 之前，
+    /// 不属于任何 `<tbody id="xq_N">`，所以得单独认出来
+    String pageWithOther(String other) => '''
+<div class="alert">其它课程：<span class="red">$other</span><br></div>
+<table id="kblist_table"><tbody id="xq_1">
+<tr><td id="jc_1-1-2" rowspan="1"><span class="festival">1-2</span></td>
+<td><div class="timetable_con text-left">
+<span class="title"><font color="blue">军事理论★</font></span>
+<p>教师：曹荣军 上课地点：12204(大) 周数：3-10周</p>
+</div></td></tr></tbody></table>''';
+
+    test('没有节次的课进课程名单，但不进课表网格', () {
+      final data = const JwglxtCourseTableParser()
+          .parse(pageWithOther('军事技能☆陆佳辉(共2周)/11-12周/无;'));
+
+      final course = data.courses.firstWhere((c) => c.name == '军事技能');
+      expect(course.teacher, '陆佳辉');
+      expect(data.sessions.any((s) => s.name == '军事技能'), isFalse);
+      // 原本的排课不受影响
+      expect(data.sessions.single.name, '军事理论');
+    });
+
+    test('没有这一行时照旧，不会把课程名单弄乱', () {
+      final data = const JwglxtCourseTableParser().parse(pageWithOther(''));
+
+      expect(data.courses.map((c) => c.name), ['军事理论']);
+    });
+
+    test('多条用分号隔开，同一行重复出现也只算一次', () {
+      final data = const JwglxtCourseTableParser().parse(
+        '${pageWithOther('军事技能☆陆佳辉(共2周)/11-12周/无;')}'
+        '<div>其它课程：军事技能☆陆佳辉(共2周)/11-12周/无;入学教育☆王老师/1周/无;</div>',
+      );
+
+      expect(data.courses.where((c) => c.name == '军事技能').length, 1);
+      expect(
+        data.courses.map((c) => c.name),
+        ['军事理论', '军事技能', '入学教育'],
+      );
+    });
+  });
+
   group('周数文本解析', () {
     test('连续区间展开成周次列表', () {
       expect(JwglxtCourseTableParser.parseWeeks('4-17周'), [

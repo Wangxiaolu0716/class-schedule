@@ -38,6 +38,13 @@ class JwglxtCourseTableParser implements CourseTableParser {
   /// 课程名后面跟着的类型标记：★-理论 ■-上机 ◆-实践 ☆-实验
   static final RegExp _typeMarksRe = RegExp(r'[★■◆☆]');
 
+  /// 网格课表底部那行「其它课程：军事技能☆陆佳辉(共2周)/11-12周/无;」。
+  ///
+  /// 它渲染在 `kblist_table` 之前、不属于任何 `<tbody id="xq_N">`，
+  /// 所以既有逻辑扫不到，得单独按全文找一次。
+  static final RegExp _otherCoursesRe =
+      RegExp(r'其[它他]课程\s*[：:]([\s\S]*?)(?:<br|</div>)');
+
   @override
   CourseTableData parse(String html) {
     final sessions = <CourseSession>[];
@@ -57,6 +64,16 @@ class JwglxtCourseTableParser implements CourseTableParser {
             teacher: session.teacher,
           ),
         );
+      }
+    }
+
+    // 网格课表底部还有一行「其它课程」。这类课（军训、实践之类）没有节次，
+    // 进不了课表网格，但列进课程名单才不会被当成漏掉的课。
+    for (final match in _otherCoursesRe.allMatches(html)) {
+      for (final course in _otherCourses(_stripTags(match.group(1)!))) {
+        // 同一门课若已有排课记录（名字一致），就不要重复列
+        if (courses.values.any((c) => c.name == course.name)) continue;
+        courses.putIfAbsent(course.courseId, () => course);
       }
     }
 
@@ -153,9 +170,49 @@ class JwglxtCourseTableParser implements CourseTableParser {
   }
 
   /// 课程名去掉 `` 后面的类型标记（★-理论 ■-上机 ◆-实践 ☆-实验）
-  static String _cleanName(String raw) {
-    final text = raw.replaceAll(RegExp(r'<[^>]*>'), '');
-    return text.replaceAll(_typeMarksRe, '').trim();
+  static String _cleanName(String raw) => _stripTags(raw)
+      .replaceAll(_typeMarksRe, '')
+      .trim();
+
+  /// 去掉 HTML 标签，并把常见的实体还原成空格
+  static String _stripTags(String raw) => raw
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .trim();
+
+  /// 解析「其它课程」那一行，格式形如
+  /// `军事技能☆陆佳辉(共2周)/11-12周/无; 入学教育☆王老师(共1周)/1周/无;`
+  ///
+  /// 每条以 `/` 分段，第一段是「课名+类型标记+教师」，后面的周次与地点
+  /// 对网格课表没有意义（[Course] 也装不下），这里只用第一段。
+  static List<Course> _otherCourses(String text) {
+    final result = <Course>[];
+    for (final item in text.split(RegExp(r'[;；]'))) {
+      final head = item.trim().split('/').first.trim();
+      if (head.isEmpty) continue;
+
+      // 去掉「(共2周)」这类补充说明
+      final body = head.replaceAll(RegExp(r'[（(][^）)]*[）)]'), '').trim();
+      if (body.isEmpty) continue;
+
+      // 类型标记夹在课名与教师之间：军事技能☆陆佳辉
+      final split = RegExp(r'^(.+?)[★■◆☆〇]\s*(.*)$').firstMatch(body);
+      final name = _cleanName(split?.group(1) ?? body);
+      if (name.isEmpty) continue;
+
+      final teacher = (split?.group(2) ?? '').trim();
+      result.add(
+        Course(
+          // 与排课记录同一套规则：课名加教师，避免不同课挤成同一条
+          courseId: teacher.isEmpty ? name : '$name-$teacher',
+          code: '',
+          name: name,
+          teacher: teacher,
+        ),
+      );
+    }
+    return result;
   }
 
   static String? _semester(String html) {
