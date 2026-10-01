@@ -37,27 +37,41 @@ Future<SchoolConfig?> showSchoolPicker(
   if (pick == null || !context.mounted) return null;
 
   if (pick.autoImport) return nbccSchool;
+  if (pick.ai) return SchoolConfig.aiImport();
 
   final school = pick.school;
   if (school != null) {
     return SchoolConfig.manual(school.url, name: school.name);
   }
 
-  final url = await _askEntryUrl(context, lastManualUrl);
+  final url = await askEntryUrl(context, lastManualUrl);
   if (url == null) return null;
   return SchoolConfig.manual(url);
 }
 
 /// 用户在列表里选了什么
 class _Pick {
-  const _Pick.auto() : autoImport = true, school = null;
-  const _Pick.school(this.school) : autoImport = false;
+  const _Pick.auto()
+      : autoImport = true,
+        school = null,
+        ai = false;
+  const _Pick.school(this.school)
+      : autoImport = false,
+        ai = false;
   const _Pick.manual()
       : autoImport = false,
-        school = null;
+        school = null,
+        ai = false;
+  const _Pick.ai()
+      : autoImport = false,
+        school = null,
+        ai = true;
 
   final bool autoImport;
   final SchoolInfo? school;
+
+  /// 走 AI 识别导入
+  final bool ai;
 }
 
 /// 学校选择面板：搜索框 + 列表
@@ -168,6 +182,13 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
               subtitle: const Text('自己填教务系统地址，再在应用内登录导课'),
               onTap: () => Navigator.pop(context, const _Pick.manual()),
             ),
+            // 内置解析器认不出来的学校（页面结构特殊、或还没适配过）走这条
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('AI 识别导入'),
+              subtitle: const Text('让 AI 看课表截图，把结果粘回来就能导入'),
+              onTap: () => Navigator.pop(context, const _Pick.ai()),
+            ),
           ],
         ),
       ),
@@ -175,8 +196,11 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
   }
 }
 
-/// 让用户填教务系统入口地址
-Future<String?> _askEntryUrl(BuildContext context, String? lastUrl) {
+/// 让用户填教务系统入口地址。返回 null 表示用户取消或填的地址不可用。
+///
+/// 「手动导课」和「AI 识别导入」都要先有一个入口地址才能打开教务系统，
+/// 所以这段单独抽出来共用。
+Future<String?> askEntryUrl(BuildContext context, String? lastUrl) {
   final controller = TextEditingController(text: lastUrl ?? '');
   String? error;
 
@@ -192,7 +216,7 @@ Future<String?> _askEntryUrl(BuildContext context, String? lastUrl) {
             children: [
               const Text(
                 '填入学校教务系统的入口地址即可，后面在应用内自己登录、'
-                '翻到课表页再点「导课」。',
+                '再翻到课表页抓取。',
                 style: TextStyle(fontSize: 13, height: 1.5),
               ),
               const SizedBox(height: 12),

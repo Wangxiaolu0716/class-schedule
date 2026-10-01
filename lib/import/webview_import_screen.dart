@@ -20,6 +20,17 @@ class ImportResult {
   final SchoolConfig school;
 }
 
+/// 从页面里导出的结构，交给 AI 识别课表用
+class PageStructure {
+  const PageStructure({required this.text, required this.truncated});
+
+  /// 去掉脚本、样式、注释后的页面结构
+  final String text;
+
+  /// 太长了被截断过
+  final bool truncated;
+}
+
 /// 用 WebView 导入课表，支持两种模式。
 ///
 /// **自动模式**（[SchoolConfig.autoImport] 为 true，即预置了端点的学校）：
@@ -33,9 +44,19 @@ class ImportResult {
 ///
 /// 登录凭据始终由用户在真实的教务系统页面里输入，App 不接触账号密码。
 class WebViewImportScreen extends StatefulWidget {
-  const WebViewImportScreen({super.key, required this.school});
+  const WebViewImportScreen({
+    super.key,
+    required this.school,
+    this.exportStructure = false,
+  });
 
   final SchoolConfig school;
+
+  /// 抓页面结构返回给 AI，而不是就地解析。
+  ///
+  /// 配合 [SchoolConfig.manual] 使用：这条路上没有任何预置端点，
+  /// 也不需要认得对方是哪套系统。
+  final bool exportStructure;
 
   @override
   State<WebViewImportScreen> createState() => _WebViewImportScreenState();
@@ -47,7 +68,9 @@ class _WebViewImportScreenState extends State<WebViewImportScreen> {
 
   late String _status = widget.school.autoImport
       ? '请在下方页面登录 WebVPN'
-      : '请先登录，再翻到能看全整张课表的页面';
+      : widget.exportStructure
+          ? '请先登录，再翻到能看全整张课表的页面，然后点右下角「导出结构」'
+          : '请先登录，再翻到能看全整张课表的页面';
 
   /// 正在抓取，避免重复触发
   bool _capturing = false;
@@ -254,6 +277,117 @@ fetch('${_school.courseTableActionPath}', {
     }
   }
 
+  // ------------------------------------------------------ 导出给 AI 识别
+
+  /// 页面结构最长给多少字符。
+  ///
+  /// 正常的课表页去掉脚本样式后远低于这个数；真超了就说明多半抓错了页面，
+  /// 与其把几兆的 HTML 塞进剪贴板和 AI 对话框，不如截断了如实告诉用户。
+  static const int _structureLimit = 100000;
+
+  /// 导出当前页面结构，交给 AI 识别导入。
+  ///
+  /// 整页 HTML 喂给 AI 太臃肿：教务系统页面的体积大头是脚本和样式，
+  /// 对认课表毫无用处，还挤占对话长度。这里只留 DOM 结构与文字，
+  /// 顺带去掉注释和内联事件脚本。
+  Future<void> _exportStructure() async {
+    if (_capturing) return;
+    setState(() {
+      _capturing = true;
+      _status = '正在导出页面结构…';
+    });
+
+    late final String text;
+    var truncated = false;
+    try {
+      final raw = (await _evaluateJs(_structureJs)).trim();
+      if (raw.isEmpty) {
+        if (mounted) setState(() => _status = '这一页没读到内容，请确认页面已经打开');
+        return;
+      }
+      truncated = raw.length > _structureLimit;
+      text = truncated ? raw.substring(0, _structureLimit) : raw;
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(PageStructure(text: text, truncated: truncated));
+  }
+
+  /// 收集并精简当前页面（含子框架）的结构。
+  ///
+  /// 框架页里真正装着课表的那一帧往往只有一处，其余是菜单之类的壳，
+  /// 太短的帧直接丢掉，免得白白占掉 AI 的上下文。
+  static const String _structureJs = r'''
+(function () {
+  var JUNK = 'script,style,noscript,link,meta,svg,iframe,template,canvas';
+  var MIN_FRAME = 200;
+
+  function clean(doc) {
+    var src = doc.body || doc.documentElement;
+    if (!src) return '';
+    var root = src.cloneNode(true);
+
+    var junk = root.querySelectorAll(JUNK);
+    for (var i = 0; i < junk.length; i++) {
+      if (junk[i].parentNode) junk[i].parentNode.removeChild(junk[i]);
+    }
+
+    // 128 是 NodeFilter.SHOW_COMMENT。注释要清掉：被注释掉的大段脚本、
+    // 条件注释在教务系统页面里很常见，喂给 AI 纯属占地方
+    if (doc.createTreeWalker) {
+      var walker = doc.createTreeWalker(root, 128, null);
+      var comments = [];
+      while (walker.nextNode()) comments.push(walker.currentNode);
+      for (var j = 0; j < comments.length; j++) {
+        if (comments[j].parentNode) comments[j].parentNode.removeChild(comments[j]);
+      }
+    }
+
+    var nodes = root.querySelectorAll('*');
+    for (var k = 0; k < nodes.length; k++) {
+      var hit = [];
+      for (var a = 0; a < nodes[k].attributes.length; a++) {
+        var name = nodes[k].attributes[a].name;
+        if (name.slice(0, 2).toLowerCase() === 'on') hit.push(name);
+      }
+      for (var b = 0; b < hit.length; b++) nodes[k].removeAttribute(hit[b]);
+    }
+
+    return (root.innerHTML || '')
+      .replace(/\s+/g, ' ')
+      .replace(/>\s+</g, '><')
+      .trim();
+  }
+
+  var frames = [];
+  function walk(w, depth) {
+    try {
+      frames.push([depth, clean(w.document)]);
+    } catch (e) {
+      frames.push([depth, '无法读取: ' + e]);
+    }
+    try {
+      for (var i = 0; i < w.frames.length; i++) walk(w.frames[i], depth + 1);
+    } catch (e) {}
+  }
+  walk(window, 0);
+
+  var picked = [];
+  for (var n = 0; n < frames.length; n++) {
+    if (frames[n][1].length >= MIN_FRAME) picked.push(frames[n]);
+  }
+  if (picked.length === 0) picked = frames;
+
+  var parts = [];
+  for (var m = 0; m < picked.length; m++) {
+    parts.push('[frame' + picked[m][0] + '] ' + picked[m][1]);
+  }
+  return parts.join('\n');
+})()
+''';
+
   /// 切换桌面 / 手机 User-Agent。
   ///
   /// 换 UA 必须重新加载：页面是旧 UA 渲染出来的那版，不重载等于没切。
@@ -349,10 +483,17 @@ fetch('${_school.courseTableActionPath}', {
   @override
   Widget build(BuildContext context) {
     final auto = _school.autoImport;
+    final exporting = widget.exportStructure;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(auto ? '登录并导入课表' : '手动导课'),
+        title: Text(
+          exporting
+              ? '打开教务系统'
+              : auto
+                  ? '登录并导入课表'
+                  : '手动导课',
+        ),
         actions: [
           if (auto && _school.hasCourseTablePage)
             IconButton(
@@ -399,13 +540,19 @@ fetch('${_school.courseTableActionPath}', {
           Expanded(child: WebViewWidget(controller: _controller)),
         ],
       ),
-      floatingActionButton: auto
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _capturing ? null : _captureManually,
-              icon: const Icon(Icons.download_for_offline_outlined),
-              label: const Text('导课'),
-            ),
+      floatingActionButton: exporting
+          ? FloatingActionButton.extended(
+              onPressed: _capturing ? null : _exportStructure,
+              icon: const Icon(Icons.data_object, size: 20),
+              label: const Text('导出结构'),
+            )
+          : auto
+              ? null
+              : FloatingActionButton.extended(
+                  onPressed: _capturing ? null : _captureManually,
+                  icon: const Icon(Icons.download_for_offline_outlined),
+                  label: const Text('导课'),
+                ),
     );
   }
 }

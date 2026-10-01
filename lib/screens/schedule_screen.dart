@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../import/ai_import_screen.dart';
 import '../import/course_cache.dart';
 import '../import/school_config.dart';
 import '../import/school_picker.dart';
@@ -185,14 +186,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// 导入课表。
   ///
   /// 先让用户选学校：本校走全自动（识别页面 + 自己请求课表接口）；
-  /// 其它学校走手动导课（用户自己登录并翻到课表页，再点「导课」）。
-  /// 两条路最后都返回 [ImportResult]，这里统一收尾。
+  /// 其它学校走手动导课（用户自己登录并翻到课表页，再点「导课」）；
+  /// 内置解析器认不出来的学校走 AI 识别（让 AI 看截图，把 JSON 粘回来）。
+  /// 三条路最后都得到 [ImportResult]，收尾逻辑共用 [_applyImport]。
   Future<void> _import() async {
     final lastUrl = await _cache.loadManualEntryUrl();
     if (!mounted) return;
 
     final school = await showSchoolPicker(context, lastManualUrl: lastUrl);
     if (school == null || !mounted) return;
+
+    // AI 识别这条路不在这里解析：课表由用户在界面里粘回来的 AI 结果决定，
+    // 要打开教务系统也是进去之后自己开
+    if (school.isAiImport) {
+      final data = await Navigator.of(context).push<CourseTableData>(
+        MaterialPageRoute(
+          builder: (_) => AiImportScreen(lastManualUrl: lastUrl),
+        ),
+      );
+      if (data == null || !mounted) return;
+      await _applyImport(ImportResult(data: data, school: school));
+      return;
+    }
 
     // 手动模式填的地址存一份，下次预填，省得反复手打
     if (!school.autoImport) {
@@ -204,6 +219,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       MaterialPageRoute(builder: (_) => WebViewImportScreen(school: school)),
     );
     if (result == null || !mounted) return;
+    await _applyImport(result);
+  }
+
+  /// 导入结果统一收尾：落盘配置、切到当前周、必要时引导设置开学时间。
+  Future<void> _applyImport(ImportResult result) async {
+    if (!mounted) return;
 
     final config = TableConfig.initialFor(
       name: result.school.tableName,

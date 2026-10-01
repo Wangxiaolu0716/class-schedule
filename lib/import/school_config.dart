@@ -51,6 +51,17 @@ class SchoolConfig {
         userAgent: androidMobileUserAgent,
       );
 
+  /// 「AI 识别导入」：课表由用户粘回来的 AI 结果决定，不需要登录任何站点。
+  ///
+  /// 没有课表页也就拿不到开学日期，所以 [startDate] 留空，
+  /// 导入完成后沿用既有的「引导用户去设置开学时间」那条路。
+  factory SchoolConfig.aiImport() => SchoolConfig(
+        id: 'ai',
+        name: '',
+        loginUrl: '',
+        userAgent: androidMobileUserAgent,
+      );
+
   /// 内部标识，用于区分不同学校的配置
   final String id;
 
@@ -76,6 +87,9 @@ class SchoolConfig {
   ///
   /// 只有预置了端点的学校才是 true。
   final bool autoImport;
+
+  /// 是否走「AI 识别导入」：课表来自用户粘回来的 AI 结果，不经过 WebView
+  bool get isAiImport => id == 'ai';
 
   /// 「我的课表」入口页地址；未配置时为 null
   Uri? get courseTablePageUri => courseTablePageUrl.isEmpty
