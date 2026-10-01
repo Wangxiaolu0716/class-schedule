@@ -265,8 +265,8 @@ fetch('${_school.courseTableActionPath}', {
       if (parsed == null) {
         if (!mounted) return;
         setState(() {
-          _status = '这一页没找到课表。请先翻到能看全整张课表的页面，再点「导课」；'
-              '若确实停在课表页仍失败，可到「课表设置 → 诊断 → 解析诊断」看具体原因。';
+          _status = '这一页没找到课表。请先翻到能看全整张课表的页面再点「导课」；'
+              '如果这所学校用的教务系统不在支持范围内，退回上一页选「AI 识别导入」，让它替你认这张课表。';
         });
         return;
       }

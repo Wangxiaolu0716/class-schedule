@@ -141,26 +141,12 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
                 onTap: () => Navigator.pop(context, const _Pick.auto()),
               ),
             Expanded(
-              child: ListView(
-                children: [
-                  for (final school in filtered)
-                    ListTile(
-                      leading: const Icon(Icons.school_outlined),
-                      title: Text(school.name),
-                      // 如实标注验证状态：列表里有，不代表一定能用
-                      subtitle: Text(
-                        school.verified ? '已验证可用' : '尚未验证，可能不适用',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: school.verified
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-                      onTap: () => Navigator.pop(context, _Pick.school(school)),
-                    ),
-                  if (filtered.isEmpty)
-                    Padding(
+              // 按需构建：学校列表有几百条，一次性全 build 会卡住面板
+              child: ListView.builder(
+                itemCount: filtered.isEmpty ? 1 : filtered.length,
+                itemBuilder: (context, index) {
+                  if (filtered.isEmpty) {
+                    return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 26),
                       child: Center(
                         child: Text(
@@ -168,9 +154,25 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
                           style: const TextStyle(fontSize: 13),
                         ),
                       ),
+                    );
+                  }
+                  final school = filtered[index];
+                  return ListTile(
+                    leading: const Icon(Icons.school_outlined),
+                    title: Text(school.name),
+                    // 如实标注验证状态：列表里有，不代表一定能用
+                    subtitle: Text(
+                      school.verified ? '已验证可用' : '尚未验证，可能不适用',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: school.verified
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.outline,
+                      ),
                     ),
-                  const SizedBox(height: 8),
-                ],
+                    onTap: () => Navigator.pop(context, _Pick.school(school)),
+                  );
+                },
               ),
             ),
             // 「手动输入网址」固定在最底部，不放进滚动列表：
