@@ -24,7 +24,12 @@ class AppWatermark extends StatelessWidget {
     return CustomPaint(
       // 用前景画笔：先画 child，再把水印叠在上面
       foregroundPainter: WatermarkPainter(settings, color: color),
-      child: child,
+      // 给内容单独开一个重绘边界，否则水印会跟着内容一起重画：
+      // 前景画笔和它包着的 child 同属一个重绘边界，内容每重绘一次
+      // （滑动课表、切页、切主题）都要把水印重画一遍，而一屏水印有五十多段
+      // 文字，滑课表时等于每帧白画五十多次文字——老设备上就是明显的掉帧。
+      // 隔一道边界后，内容重绘只影响内容层，水印层原样复用。
+      child: RepaintBoundary(child: child),
     );
   }
 }
