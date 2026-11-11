@@ -12,6 +12,7 @@ import '../models/grid_layout.dart';
 import '../models/school_periods.dart';
 import '../models/table_config.dart';
 import '../parsers/course_table_parser.dart';
+import '../reminder/class_reminder.dart';
 import '../import/silent_refresh.dart';
 import '../theme/appearance_background.dart';
 import '../theme/table_style.dart';
@@ -273,6 +274,16 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     if (picked != null && mounted) _goToWeek(picked);
   }
 
+  /// 按当前课表重排「课前 15 分钟」提醒（开关关着就是清空）。
+  ///
+  /// 不 await：排提醒是后台的事，别拖住课表渲染；出错也只是提醒不响。
+  void _syncReminders() {
+    if (_data == null) return;
+    const ClassReminderService()
+        .sync(sessions: _sessions, config: _config)
+        .ignore();
+  }
+
   /// 自建条目 → 排课记录与颜色表。
   ///
   /// 换算出的记录和导入的课程混成一个列表再进网格，分列、「二选一」合并、
@@ -414,6 +425,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     // 记下这所学校：下次打开课表时静默刷新要用它的入口与接口路径
     await _cache.saveLastSchool(result.school);
     if (!mounted) return;
+    _syncReminders();
     final week = _initialWeek(config, result.data);
     setState(() {
       _data = result.data;
@@ -497,6 +509,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           config: _config,
           courses: _data?.courses ?? const [],
           sessions: _data?.sessions ?? const [],
+          reminderSessions: _sessions,
         ),
       ),
     );
@@ -512,6 +525,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       _draftWeek = null;
       _draftDay = null;
     });
+    _syncReminders();
     // 开学时间/周数/钟点改了，课前提醒要跟着重算
   }
 

@@ -4,6 +4,7 @@ import '../import/course_cache.dart';
 import '../models/course.dart';
 import '../models/table_config.dart';
 import '../import/school_session.dart';
+import '../reminder/class_reminder.dart';
 import '../theme/table_style.dart';
 import '../theme/theme_mode.dart';
 import 'appearance_screen.dart';
@@ -19,11 +20,15 @@ class TableSettingsScreen extends StatefulWidget {
     required this.config,
     required this.courses,
     required this.sessions,
+    required this.reminderSessions,
   });
 
   final TableConfig config;
   final List<Course> courses;
   final List<CourseSession> sessions;
+
+  /// 排提醒要用合并后的列表（含自建课程/日程）
+  final List<CourseSession> reminderSessions;
 
   @override
   State<TableSettingsScreen> createState() => _TableSettingsScreenState();
@@ -34,6 +39,15 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
 
   final CourseCache _cache = const CourseCache();
   late TableConfig _config = widget.config;
+
+  bool _reminderEnabled = false;
+  int _reminderCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReminder();
+  }
 
   Future<void> _update(TableConfig next) async {
     setState(() => _config = next);
@@ -123,6 +137,18 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
             value: _config.autoRefresh,
             onChanged: (value) => _update(_config.copyWith(autoRefresh: value)),
           ),
+          ListTile(
+            title: const Text('课前通知'),
+            subtitle: Text(
+              !_reminderEnabled
+                  ? '上课前 15 分钟弹通知，点这一行可以先测试一条'
+                  : _config.startDate == null
+                  ? '还差开学时间：设置好才排得出上课时间'
+                  : '已排 $_reminderCount 条，点这一行可发一条测试提醒',
+            ),
+            trailing: Switch(value: _reminderEnabled, onChanged: _toggleReminder),
+            onTap: _sendTestReminder,
+          ),
           _buildUnscheduledTile(),
           _sectionHeader('主题'),
           // 全局配色，改完立即生效并落盘
@@ -209,6 +235,51 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _loadReminder() async {
+    final service = const ClassReminderService();
+    final enabled = await service.isEnabled();
+    final count = enabled ? await service.scheduledCount() : 0;
+    if (!mounted) return;
+    setState(() {
+      _reminderEnabled = enabled;
+      _reminderCount = count;
+    });
+  }
+
+  /// 打开时顺手要通知与精确闹钟权限，再按课表排一遍
+  Future<void> _toggleReminder(bool value) async {
+    setState(() => _reminderEnabled = value);
+    final ok = await const ClassReminderService().setEnabled(
+      value,
+      sessions: widget.reminderSessions,
+      config: _config,
+    );
+    if (!mounted) return;
+    if (value && !ok) {
+      setState(() => _reminderEnabled = false);
+      _toast('没拿到通知权限，去系统设置里允许发通知，再回来打开');
+      return;
+    }
+    final count = await const ClassReminderService().scheduledCount();
+    if (!mounted) return;
+    setState(() {
+      _reminderEnabled = value;
+      _reminderCount = count;
+    });
+    if (value) _toast('已按当前课表排好 $count 条课前提醒');
+  }
+
+  /// 发一条 10 秒后的测试提醒
+  Future<void> _sendTestReminder() async {
+    final ok = await const ClassReminderService().sendTest();
+    if (!mounted) return;
+    _toast(ok ? '10 秒后弹一条测试提醒，锁上屏等着看' : '没拿到通知权限，先去系统设置里允许发通知');
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _sectionHeader(String text) {

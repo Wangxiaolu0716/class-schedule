@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'reminder/class_reminder.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/watermark_settings_screen.dart';
 import 'theme/app_font.dart';
@@ -15,6 +16,8 @@ void main() async {
   // 否则开屏会先闪一下系统字体再切过来。
   WidgetsFlutterBinding.ensureInitialized();
   appFont.value = await const AppFontStore().load();
+  // 课前通知的插件与时区提前初始化好：课表页一读出来就能立刻重排提醒
+  await const ClassReminderService().init();
   runApp(const NbccScheduleApp());
 }
 
