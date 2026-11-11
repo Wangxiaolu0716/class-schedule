@@ -26,12 +26,20 @@ const String desktopUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+/// 正方 EAMS 课表接口的默认相对路径。
+///
+/// 学校列表里没单独写 `courseTableActionPath` 时用它。必须是相对路径：
+/// 这段会被注入页面，以同源方式 fetch，写成绝对地址会跨域。
+const String eamsCourseTableActionPath =
+    '/eams/courseTableForStd!courseTable.action';
+
 /// 一所学校的导入配置
 class SchoolConfig {
   const SchoolConfig({
     required this.id,
     required this.name,
     required this.loginUrl,
+    this.fallbackLoginUrl = '',
     this.courseTablePageUrl = '',
     this.courseTableActionPath = '',
     this.userAgent = '',
@@ -56,11 +64,11 @@ class SchoolConfig {
   /// 没有课表页也就拿不到开学日期，所以 [startDate] 留空，
   /// 导入完成后沿用既有的「引导用户去设置开学时间」那条路。
   factory SchoolConfig.aiImport() => SchoolConfig(
-        id: 'ai',
-        name: '',
-        loginUrl: '',
-        userAgent: androidMobileUserAgent,
-      );
+    id: 'ai',
+    name: '',
+    loginUrl: '',
+    userAgent: androidMobileUserAgent,
+  );
 
   /// 内部标识，用于区分不同学校的配置
   final String id;
@@ -70,6 +78,12 @@ class SchoolConfig {
 
   /// 登录入口地址。自动模式下是学校门户，手动模式下由用户自己填
   final String loginUrl;
+
+  /// 主入口打不开时的备用入口；空串表示没有。
+  ///
+  /// 学校换统一身份认证域名时，新域名未必立刻对所有网络可达（校园网内外
+  /// 解析可能不同），留一条旧入口兜底，总比让用户对着「页面加载失败」强。
+  final String fallbackLoginUrl;
 
   /// 「我的课表」入口页完整地址，只有自动模式用得上
   final String courseTablePageUrl;
@@ -92,26 +106,68 @@ class SchoolConfig {
   bool get isAiImport => id == 'ai';
 
   /// 「我的课表」入口页地址；未配置时为 null
-  Uri? get courseTablePageUri => courseTablePageUrl.isEmpty
-      ? null
-      : Uri.tryParse(courseTablePageUrl);
+  Uri? get courseTablePageUri =>
+      courseTablePageUrl.isEmpty ? null : Uri.tryParse(courseTablePageUrl);
+
+  /// 备用登录入口；未配置时为 null
+  Uri? get fallbackLoginUri =>
+      fallbackLoginUrl.isEmpty ? null : Uri.tryParse(fallbackLoginUrl);
 
   /// 是否配置了「直达我的课表」的入口
   bool get hasCourseTablePage => courseTablePageUri != null;
 
   /// 课表的默认名称
   String get tableName => name.trim().isEmpty ? '我的课表' : name;
+
+  /// 存盘用：静默刷新要认得上次是从哪所学校导进来的
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'loginUrl': loginUrl,
+    'fallbackLoginUrl': fallbackLoginUrl,
+    'courseTablePageUrl': courseTablePageUrl,
+    'courseTableActionPath': courseTableActionPath,
+    'userAgent': userAgent,
+    'startDate': startDate?.toIso8601String(),
+    'autoImport': autoImport,
+  };
+
+  static SchoolConfig? fromJson(Map<String, dynamic> json) {
+    final loginUrl = json['loginUrl'] as String? ?? '';
+    final pageUrl = json['courseTablePageUrl'] as String? ?? '';
+    // 没有入口地址就没有刷新可言，直接当作没存过
+    if (loginUrl.isEmpty && pageUrl.isEmpty) return null;
+    final rawDate = json['startDate'] as String?;
+    return SchoolConfig(
+      id: 'last',
+      name: json['name'] as String? ?? '',
+      loginUrl: loginUrl,
+      fallbackLoginUrl: json['fallbackLoginUrl'] as String? ?? '',
+      courseTablePageUrl: pageUrl,
+      courseTableActionPath: json['courseTableActionPath'] as String? ?? '',
+      userAgent: json['userAgent'] as String? ?? '',
+      startDate: rawDate == null ? null : DateTime.tryParse(rawDate),
+      autoImport: json['autoImport'] as bool? ?? false,
+    );
+  }
 }
 
 /// 宁波城市职业技术学院（当前仅验证鄞州校区）
 ///
-/// 与学校相关的全部硬编码都收在这里，换学校时只动这个文件或新增一份配置。
+/// 这条配置现在只作**离线兜底**：线上以服务器 `schools.json` 里同名那条为准，
+/// 改入口地址不用发版。这里保留一份，是为了学校列表拉不到时 App 还能用。
 final SchoolConfig nbccSchool = SchoolConfig(
   id: 'nbcc',
   name: '宁波城市职业技术学院',
-  loginUrl: 'https://webvpn.nbcc.cn/users/sign_in',
-  courseTablePageUrl: 'https://jwgl.webvpn.nbcc.cn/eams/courseTableForStd.action',
-  courseTableActionPath: '/eams/courseTableForStd!courseTable.action',
+  // 学校新的统一身份认证入口。主地址打不开时退回熟悉的 WebVPN 登录页。
+  loginUrl: 'https://ids.nbcc.cn/',
+  fallbackLoginUrl: 'https://webvpn.nbcc.edu.cn/login',
+  // 登录成功后要去的「我的课表」页。学校 2026-10 换成了新版 WebVPN：
+  // 后端主机被编成 /http/<hex>/ 这段固定前缀（不随会话变化，别改成别的域名）。
+  courseTablePageUrl:
+      'https://webvpn.nbcc.edu.cn'
+      '/http/77726476706e69737468656265737421fae04690693e6a537d468aa2'
+      '/eams/courseTableForStd.action',
+  courseTableActionPath: eamsCourseTableActionPath,
   userAgent: androidMobileUserAgent,
   // 教务系统不提供开学日期（课表页里既无钟点也无日期），这里给默认值。
   // 依据：教务系统移动端显示「第 5 周 = 10-05 ~ 10-11」，反推第 1 周为 09-07。

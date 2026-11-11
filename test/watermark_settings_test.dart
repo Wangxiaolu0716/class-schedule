@@ -4,6 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nbcc_schedule/watermark/watermark_settings.dart';
 
 void main() {
+  test('默认关闭：正式版不该自带水印，功能留在隐藏页里随时可开', () {
+    expect(WatermarkSettings.defaults.enabled, isFalse);
+  });
+
   test('默认值就是约定的那一套：15sp、稀疏、很淡', () {
     const settings = WatermarkSettings.defaults;
 
@@ -41,6 +45,18 @@ void main() {
     expect(restored.fontSize, 30);
     expect(restored.spacing, WatermarkSettings.defaults.spacing);
     expect(restored.text, WatermarkSettings.defaults.text);
+    // 老版本存的水印配置里没有 enabled，读回来必须是关着的
+    expect(restored.enabled, isFalse);
+  });
+
+  test('开关存得下来，也能单独打开', () {
+    const on = WatermarkSettings(enabled: true);
+    final restored = WatermarkSettings.fromJson(
+      jsonDecode(jsonEncode(on.toJson())) as Map<String, dynamic>,
+    );
+
+    expect(restored.enabled, isTrue);
+    expect(const WatermarkSettings().copyWith(enabled: true).enabled, isTrue);
   });
 
   test('改过和没改过的不相等，shouldRepaint 才判断得出来', () {

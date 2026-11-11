@@ -182,4 +182,62 @@ void main() {
       expect(parser.parse(raw).data.periodsPerDay, 10);
     });
   });
+
+  group('作息解析', () {
+    const periods = AiPeriodsParser();
+
+    test('按份输出，夏令/冬令各一份', () {
+      const raw = '''
+```json
+[
+  {"label":"夏令时间","times":[{"period":1,"start":"08:15","end":"09:00"},
+                               {"period":2,"start":"09:05","end":"09:50"}]},
+  {"label":"冬令时间","times":[{"period":1,"start":"08:15","end":"09:00"}]}
+]
+```''';
+      final result = periods.parse(raw);
+      expect(result.presets.map((p) => p.label).toList(), ['夏令时间', '冬令时间']);
+      expect(result.presets.first.times, hasLength(2));
+      expect(result.presets.first.times[1].start, '09:05');
+    });
+
+    test('不分份、一节一条的数组当成一份', () {
+      const raw = '[{"period":1,"start":"08:15","end":"09:00"},'
+          '{"period":2,"start":"09:05","end":"09:50"}]';
+      final result = periods.parse(raw);
+      expect(result.presets, hasLength(1));
+      expect(result.presets.single.times.map((t) => t.period).toList(), [1, 2]);
+    });
+
+    test('容错：全角冒号、缺前导零、中文字段名', () {
+      const raw = '{"label":"冬令","times":[{"节次":"第1节","开始":"8：15","结束":"9:00"}]}';
+      final time = periods.parse(raw).presets.single.times.single;
+      expect([time.period, time.start, time.end], [1, '08:15', '09:00']);
+    });
+
+    test('节次乱序时按节次排好', () {
+      const raw = '[{"period":2,"start":"09:05","end":"09:50"},'
+          '{"period":1,"start":"08:15","end":"09:00"}]';
+      expect(periods.parse(raw).presets.single.times.first.period, 1);
+    });
+
+    test('结束早于开始（多半是抄错了）跳过并说明原因', () {
+      const raw = '{"label":"夏令","times":[{"period":1,"start":"09:00","end":"08:15"},'
+          '{"period":2,"start":"09:05","end":"09:50"}]}';
+      final result = periods.parse(raw);
+      expect(result.presets.single.times, hasLength(1));
+      expect(result.skipped.single, contains('早于开始'));
+    });
+
+    test('一节都认不出时报错', () {
+      expect(
+        () => periods.parse('[{"label":"夏令","times":[{"period":"第一节"}]}]'),
+        throwsA(isA<AiImportException>()),
+      );
+      expect(
+        () => periods.parse('抱歉，这张图看不清。'),
+        throwsA(isA<AiImportException>()),
+      );
+    });
+  });
 }

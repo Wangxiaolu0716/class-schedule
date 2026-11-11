@@ -22,22 +22,56 @@ class PeriodTime {
   final String end;
 
   Map<String, dynamic> toJson() => {
-        'period': period,
-        'start': start,
-        'end': end,
-      };
+    'period': period,
+    'start': start,
+    'end': end,
+  };
 
   static PeriodTime fromJson(Map<String, dynamic> json) => PeriodTime(
-        period: json['period'] as int,
-        start: json['start'] as String,
-        end: json['end'] as String,
-      );
+    period: json['period'] as int,
+    start: json['start'] as String,
+    end: json['end'] as String,
+  );
+}
+
+/// 调休规则：某个具体日期按另一天的课表上课。
+///
+/// 国内学校的调休（国庆/中秋等假期前后）本质就是「周末那天上周几的课」。
+/// 课表本身是按周铺开的，所以这里记的是「哪一天」而不是「周次」：
+/// 用户改了开学时间导致周次错位时，按日期匹配的规则依然落在正确的日子上。
+class DaySwap {
+  const DaySwap({required this.date, required this.sourceWeekday});
+
+  /// 调休那天（只用到年月日）
+  final DateTime date;
+
+  /// 那天按周几的课表上课，1=周一 … 7=周日
+  final int sourceWeekday;
+
+  /// 是否落在 [day] 这一天（只看年月日）
+  bool isOn(DateTime day) =>
+      date.year == day.year && date.month == day.month && date.day == day.day;
+
+  Map<String, dynamic> toJson() => {
+    'date': date.toIso8601String(),
+    'sourceWeekday': sourceWeekday,
+  };
+
+  static DaySwap? fromJson(Map<String, dynamic> json) {
+    final date = DateTime.tryParse(json['date'] as String? ?? '');
+    final weekday = json['sourceWeekday'];
+    if (date == null || weekday is! num) return null;
+    return DaySwap(date: date, sourceWeekday: weekday.toInt().clamp(1, 7));
+  }
 }
 
 /// 课表配置
 class TableConfig {
+  /// 课表默认名称，也是「用户还没改过名字」的判定依据
+  static const String defaultName = '我的课表';
+
   const TableConfig({
-    this.name = '我的课表',
+    this.name = defaultName,
     this.startDate,
     this.periodsPerDay = 14,
     this.totalWeeks = 20,
@@ -48,6 +82,11 @@ class TableConfig {
     this.showOtherWeeks = true,
     this.cellHeight = 58,
     this.cellRadius = 6,
+    this.reservedPeriods = 0,
+    this.easterEggUnlocked = false,
+    this.singleDayOnly = false,
+    this.daySwaps = const [],
+    this.autoRefresh = false,
   });
 
   /// 课表名称
@@ -80,6 +119,42 @@ class TableConfig {
 
   /// 格子圆角半径（dp）
   final double cellRadius;
+
+  /// 课表底部额外预留的空档节数。
+  ///
+  /// 教务系统只给到「第几节有课」，晚自习这类时段根本不在数据里，
+  /// 导入后课表就画到最晚有课的那一节为止，晚上一片空白无处落笔。
+  /// 预留若干节空档后，底部会多出几行没有课的行，用户可直接在上面
+  /// 加晚自习、午休一类的自建课程；0 表示不预留，界面与原来完全一致。
+  final int reservedPeriods;
+
+  /// 课件实际画出来的节数：正常作息 + 底部预留的空档
+  int get totalPeriods => periodsPerDay + reservedPeriods;
+
+  /// 彩蛋是否已解锁（在设置页连点 7 次「当前版本」）。
+  ///
+  /// 解锁后「仅显示单日程」开关才会出现在设置里；再连点 7 次即重新隐藏。
+  final bool easterEggUnlocked;
+
+  /// 彩蛋功能：课表只显示一天，而不是一整周
+  final bool singleDayOnly;
+
+  /// 调休规则：某些具体日期按别的星期上课
+  final List<DaySwap> daySwaps;
+
+  /// 打开课表时静默从教务重新拉一次。
+  ///
+  /// 默认关：只有上次是从「能自动导课」的学校导进来的才有意义，
+  /// 别校走的是手动翻页面，静默刷新无从下手。
+  final bool autoRefresh;
+
+  /// [day] 这一天有没有调休规则；没有则返回 null
+  DaySwap? swapOn(DateTime day) {
+    for (final swap in daySwaps) {
+      if (swap.isOn(day)) return swap;
+    }
+    return null;
+  }
 
   /// 第 [period] 节的时间；未配置时返回 null
   PeriodTime? timeOf(int period) {
@@ -140,6 +215,11 @@ class TableConfig {
     bool? showOtherWeeks,
     double? cellHeight,
     double? cellRadius,
+    int? reservedPeriods,
+    bool? easterEggUnlocked,
+    bool? singleDayOnly,
+    List<DaySwap>? daySwaps,
+    bool? autoRefresh,
   }) {
     return TableConfig(
       name: name ?? this.name,
@@ -153,22 +233,32 @@ class TableConfig {
       showOtherWeeks: showOtherWeeks ?? this.showOtherWeeks,
       cellHeight: cellHeight ?? this.cellHeight,
       cellRadius: cellRadius ?? this.cellRadius,
+      reservedPeriods: reservedPeriods ?? this.reservedPeriods,
+      easterEggUnlocked: easterEggUnlocked ?? this.easterEggUnlocked,
+      singleDayOnly: singleDayOnly ?? this.singleDayOnly,
+      daySwaps: daySwaps ?? this.daySwaps,
+      autoRefresh: autoRefresh ?? this.autoRefresh,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'startDate': startDate?.toIso8601String(),
-        'periodsPerDay': periodsPerDay,
-        'totalWeeks': totalWeeks,
-        'weekStartDay': weekStartDay,
-        'periodTimes': periodTimes.map((t) => t.toJson()).toList(),
-        'showSaturday': showSaturday,
-        'showSunday': showSunday,
-        'showOtherWeeks': showOtherWeeks,
-        'cellHeight': cellHeight,
-        'cellRadius': cellRadius,
-      };
+    'name': name,
+    'startDate': startDate?.toIso8601String(),
+    'periodsPerDay': periodsPerDay,
+    'totalWeeks': totalWeeks,
+    'weekStartDay': weekStartDay,
+    'periodTimes': periodTimes.map((t) => t.toJson()).toList(),
+    'showSaturday': showSaturday,
+    'showSunday': showSunday,
+    'showOtherWeeks': showOtherWeeks,
+    'cellHeight': cellHeight,
+    'cellRadius': cellRadius,
+    'reservedPeriods': reservedPeriods,
+    'easterEggUnlocked': easterEggUnlocked,
+    'singleDayOnly': singleDayOnly,
+    'daySwaps': daySwaps.map((s) => s.toJson()).toList(),
+    'autoRefresh': autoRefresh,
+  };
 
   static TableConfig fromJson(Map<String, dynamic> json) {
     final rawStart = json['startDate'] as String?;
@@ -186,6 +276,61 @@ class TableConfig {
       showOtherWeeks: json['showOtherWeeks'] as bool? ?? true,
       cellHeight: (json['cellHeight'] as num?)?.toDouble() ?? 58,
       cellRadius: (json['cellRadius'] as num?)?.toDouble() ?? 6,
+      reservedPeriods: json['reservedPeriods'] as int? ?? 0,
+      easterEggUnlocked: json['easterEggUnlocked'] as bool? ?? false,
+      singleDayOnly: json['singleDayOnly'] as bool? ?? false,
+      autoRefresh: json['autoRefresh'] as bool? ?? false,
+      daySwaps: [
+        for (final item in json['daySwaps'] as List<dynamic>? ?? const [])
+          if (item is Map<String, dynamic>) ?DaySwap.fromJson(item),
+      ],
+    );
+  }
+
+  /// 把节次钟点补齐到第 [through] 节，已有的不动
+  static List<PeriodTime> extendPeriodTimes(
+    List<PeriodTime> times,
+    int through,
+  ) {
+    final byPeriod = {for (final t in times) t.period: t};
+    for (final t in defaultPeriodTimes) {
+      if (t.period <= through) byPeriod.putIfAbsent(t.period, () => t);
+    }
+    final periods = byPeriod.keys.toList()..sort();
+    return [for (final p in periods) byPeriod[p]!];
+  }
+
+  /// 重新导入课表时用：以新数据生成基础配置，但保留用户已经调过的项。
+  ///
+  /// 这里要解决的问题是「重新导一次课表，之前手动调好的节次钟点又变回去了」：
+  /// [fresh] 是从新数据算出来的配置（含默认作息），[previous] 是导入前的配置。
+  /// 用户的钟点、开学时间、外观这些都不是教务数据能覆盖的，一律沿用旧的，
+  /// 只有节数/周数/课表名这类确实随数据变化的部分才用新的。
+  ///
+  /// [previous] 为 null（首次导入）时直接返回 [fresh]。
+  static TableConfig mergeImport({
+    required TableConfig fresh,
+    required TableConfig? previous,
+  }) {
+    if (previous == null) return fresh;
+    return fresh.copyWith(
+      // 用户改过名字就留着，没改过就用学校名
+      name: previous.name == defaultName ? fresh.name : previous.name,
+      startDate: previous.startDate ?? fresh.startDate,
+      periodTimes: previous.periodTimes.isEmpty
+          ? fresh.periodTimes
+          : extendPeriodTimes(previous.periodTimes, fresh.periodsPerDay),
+      weekStartDay: previous.weekStartDay,
+      showSaturday: previous.showSaturday,
+      showSunday: previous.showSunday,
+      showOtherWeeks: previous.showOtherWeeks,
+      cellHeight: previous.cellHeight,
+      cellRadius: previous.cellRadius,
+      reservedPeriods: previous.reservedPeriods,
+      easterEggUnlocked: previous.easterEggUnlocked,
+      singleDayOnly: previous.singleDayOnly,
+      daySwaps: previous.daySwaps,
+      autoRefresh: previous.autoRefresh,
     );
   }
 
@@ -220,8 +365,9 @@ class TableConfig {
       startDate: startDate,
       periodsPerDay: periods,
       totalWeeks: maxWeek <= 0 ? 20 : maxWeek,
-      periodTimes:
-          defaultPeriodTimes.where((t) => t.period <= periods).toList(),
+      periodTimes: defaultPeriodTimes
+          .where((t) => t.period <= periods)
+          .toList(),
     );
   }
 }

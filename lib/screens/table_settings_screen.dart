@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../import/course_cache.dart';
 import '../models/course.dart';
 import '../models/table_config.dart';
+import '../import/school_session.dart';
+import '../theme/table_style.dart';
 import '../theme/theme_mode.dart';
+import 'appearance_screen.dart';
 import 'parse_diagnostics_screen.dart';
 
 /// 课表设置页。
@@ -110,6 +113,16 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
               onPicked: (v) => _update(_config.copyWith(totalWeeks: v)),
             ),
           ),
+          SwitchListTile(
+            title: const Text('打开时自动刷新课表'),
+            subtitle: Text(
+              _config.autoRefresh
+                  ? '每次打开或切回前台，静默从教务拉一次；失败就用上次的数据'
+                  : '开启后从教务自动拉取最新课表，仅支持可自动导课的学校',
+            ),
+            value: _config.autoRefresh,
+            onChanged: (value) => _update(_config.copyWith(autoRefresh: value)),
+          ),
           _buildUnscheduledTile(),
           _sectionHeader('主题'),
           // 全局配色，改完立即生效并落盘
@@ -120,6 +133,21 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
               subtitle: Text(ThemeModeStore.label(mode)),
               trailing: const Icon(Icons.chevron_right),
               onTap: _pickThemeMode,
+            ),
+          ),
+          ValueListenableBuilder<TableAppearance>(
+            valueListenable: appAppearance,
+            builder: (context, appearance, _) => ListTile(
+              title: const Text('样式与背景'),
+              subtitle: Text(
+                appearance.background.hasImage
+                    ? '${appearance.preset.name} · 已设背景图'
+                    : appearance.preset.name,
+              ),
+              trailing: const Icon(Icons.palette_outlined),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AppearanceScreen()),
+              ),
             ),
           ),
           _sectionHeader('课表外观'),
@@ -157,6 +185,18 @@ class _TableSettingsScreenState extends State<TableSettingsScreen> {
             apply: (config, v) => config.copyWith(cellRadius: v),
           ),
           _sectionHeader('诊断'),
+          ListTile(
+            title: const Text('清除教务登录态'),
+            subtitle: const Text('清掉缓存的登录 Cookie，下次导入要重新登录'),
+            trailing: const Icon(Icons.logout),
+            onTap: () async {
+              await const SchoolSession().clear();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已清除，下次导入需要重新登录')),
+              );
+            },
+          ),
           ListTile(
             title: const Text('解析诊断'),
             subtitle: const Text('把课表页面 HTML 交给解析器跑一遍，看能否解析出课程'),

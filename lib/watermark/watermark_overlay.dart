@@ -21,6 +21,7 @@ class AppWatermark extends StatelessWidget {
     final color = Theme.of(context).brightness == Brightness.dark
         ? Colors.white
         : Colors.black;
+    if (!settings.enabled) return child;
     return CustomPaint(
       // 用前景画笔：先画 child，再把水印叠在上面
       foregroundPainter: WatermarkPainter(settings, color: color),

@@ -18,11 +18,16 @@ class CustomEntryResult {
 }
 
 /// 打开「添加 / 编辑课程或日程」页；用户取消时返回 null。
+///
+/// [initialWeekday] / [initialPeriods] 用于在课表空白处点着加课：
+/// 首个时段直接落在用户划出来的那个星期与节次上。
 Future<CustomEntryResult?> showCustomEntryEditor(
   BuildContext context, {
   required TableConfig config,
   CustomCourse? course,
   CustomSchedule? schedule,
+  int? initialWeekday,
+  List<int>? initialPeriods,
 }) {
   return Navigator.of(context).push<CustomEntryResult>(
     MaterialPageRoute(
@@ -30,6 +35,8 @@ Future<CustomEntryResult?> showCustomEntryEditor(
         config: config,
         initialCourse: course,
         initialSchedule: schedule,
+        initialWeekday: initialWeekday,
+        initialPeriods: initialPeriods,
       ),
     ),
   );
@@ -42,6 +49,8 @@ class CustomEntryEditor extends StatefulWidget {
     required this.config,
     this.initialCourse,
     this.initialSchedule,
+    this.initialWeekday,
+    this.initialPeriods,
   });
 
   final TableConfig config;
@@ -51,6 +60,12 @@ class CustomEntryEditor extends StatefulWidget {
 
   /// 编辑已有的自建日程
   final CustomSchedule? initialSchedule;
+
+  /// 首个时段预置的星期（1=周一 … 7=周日）
+  final int? initialWeekday;
+
+  /// 首个时段预置的节次
+  final List<int>? initialPeriods;
 
   @override
   State<CustomEntryEditor> createState() => _CustomEntryEditorState();
@@ -133,7 +148,7 @@ class _CustomEntryEditorState extends State<CustomEntryEditor> {
   }
 
   List<_SlotDraft> _draftsFrom(CustomCourse? course) {
-    if (course == null || course.slots.isEmpty) return [_defaultSlot()];
+    if (course == null || course.slots.isEmpty) return [_initialSlot()];
     return [
       for (final slot in course.slots)
         _SlotDraft(
@@ -156,6 +171,23 @@ class _CustomEntryEditorState extends State<CustomEntryEditor> {
         dayOfWeek: DateTime.monday,
         periods: const [1, 2],
       );
+
+  /// 打开时第一个时段：在课表上点着加课时用点中的那天和那几节
+  _SlotDraft _initialSlot() {
+    final weekday = widget.initialWeekday;
+    final periods = widget.initialPeriods;
+    if (weekday == null && (periods == null || periods.isEmpty)) {
+      return _defaultSlot();
+    }
+    final base = _defaultSlot();
+    return _SlotDraft(
+      weeks: base.weeks,
+      dayOfWeek: weekday ?? base.dayOfWeek,
+      periods: periods == null || periods.isEmpty
+          ? base.periods
+          : [...periods],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -568,23 +600,21 @@ class _CustomEntryEditorState extends State<CustomEntryEditor> {
 
   void _duplicateSlot(int index) {
     final source = _slots[index];
-    setState(() {
-      _slots.insert(
-        index + 1,
-        _SlotDraft(
-          weeks: [...source.weeks],
-          dayOfWeek: source.dayOfWeek,
-          periods: [...source.periods],
-          useCustomTime: source.useCustomTime,
-          startTime: source.startTime.text,
-          endTime: source.endTime.text,
-          room: source.room.text,
-          teacher: source.teacher.text,
-          note: source.note.text,
-        ),
-      );
-    });
+    setState(() => _slots.insert(index + 1, _cloneSlot(source, source.dayOfWeek)));
   }
+
+  /// 复制一个时段；[dayOfWeek] 可以换成别的星期（批量加课时用）
+  _SlotDraft _cloneSlot(_SlotDraft source, int dayOfWeek) => _SlotDraft(
+        weeks: [...source.weeks],
+        dayOfWeek: dayOfWeek,
+        periods: [...source.periods],
+        useCustomTime: source.useCustomTime,
+        startTime: source.startTime.text,
+        endTime: source.endTime.text,
+        room: source.room.text,
+        teacher: source.teacher.text,
+        note: source.note.text,
+      );
 
   void _removeSlot(int index) {
     setState(() => _slots.removeAt(index).dispose());
@@ -620,16 +650,23 @@ class _CustomEntryEditorState extends State<CustomEntryEditor> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (_) => _PeriodPickerSheet(
-        dayOfWeek: slot.dayOfWeek,
+        days: [slot.dayOfWeek],
         periods: slot.periods,
-        periodsPerDay: widget.config.periodsPerDay,
+        // 预留的空档也要能选，否则晚自习时段根本点不到
+        periodsPerDay: widget.config.totalPeriods,
         periodTimes: widget.config.periodTimes,
       ),
     );
     if (picked == null) return;
     setState(() {
-      slot.dayOfWeek = picked.dayOfWeek;
+      final index = _slots.indexOf(slot);
+      slot.dayOfWeek = picked.days.first;
       slot.periods = picked.periods;
+      // 一次勾了多天（如周一到周五）：其余的天各复制出一个时段，
+      // 省得再逐个「添加时段」把周数、节次重设一遍
+      for (var i = 1; i < picked.days.length; i++) {
+        _slots.insert(index + i, _cloneSlot(slot, picked.days[i]));
+      }
     });
   }
 
@@ -884,9 +921,12 @@ class _SlotDraft {
 
 /// 节次选择的结果
 class _PeriodSelection {
-  const _PeriodSelection(this.dayOfWeek, this.periods);
+  const _PeriodSelection(this.days, this.periods);
 
-  final int dayOfWeek;
+  /// 选中的星期（1=周一 … 7=周日，升序）。可以多选，一次把周一到周五
+  /// 同一节次的课都建出来。
+  final List<int> days;
+
   final List<int> periods;
 }
 
@@ -973,13 +1013,14 @@ class _WeekPickerSheetState extends State<_WeekPickerSheet> {
 /// 星期 + 节次多选
 class _PeriodPickerSheet extends StatefulWidget {
   const _PeriodPickerSheet({
-    required this.dayOfWeek,
+    required this.days,
     required this.periods,
     required this.periodsPerDay,
     required this.periodTimes,
   });
 
-  final int dayOfWeek;
+  /// 当前选中的星期（可多选）
+  final List<int> days;
   final List<int> periods;
   final int periodsPerDay;
   final List<PeriodTime> periodTimes;
@@ -991,7 +1032,7 @@ class _PeriodPickerSheet extends StatefulWidget {
 class _PeriodPickerSheetState extends State<_PeriodPickerSheet> {
   static const List<String> _weekdayShort = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-  late int _dayOfWeek = widget.dayOfWeek;
+  late final Set<int> _days = {...widget.days};
   late final Set<int> _periods = {...widget.periods};
 
   @override
@@ -1003,16 +1044,36 @@ class _PeriodPickerSheetState extends State<_PeriodPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('节数', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Text('节数', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _days
+                      ..clear()
+                      ..addAll([1, 2, 3, 4, 5]);
+                  }),
+                  child: const Text('周一到周五'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
+            // 星期可多选：一次把同一节次的课勾到好几天，不必逐天添加
             Wrap(
               spacing: 8,
               children: [
                 for (var day = 1; day <= 7; day++)
-                  ChoiceChip(
+                  FilterChip(
                     label: Text(_weekdayShort[day - 1]),
-                    selected: _dayOfWeek == day,
-                    onSelected: (_) => setState(() => _dayOfWeek = day),
+                    selected: _days.contains(day),
+                    onSelected: (value) => setState(() {
+                      if (value) {
+                        _days.add(day);
+                      } else {
+                        _days.remove(day);
+                      }
+                    }),
                   ),
               ],
             ),
@@ -1045,14 +1106,17 @@ class _PeriodPickerSheetState extends State<_PeriodPickerSheet> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _periods.isEmpty
+                onPressed: _days.isEmpty || _periods.isEmpty
                     ? null
                     : () {
+                        final days = _days.toList()..sort();
                         final periods = _periods.toList()..sort();
                         Navigator.of(context)
-                            .pop(_PeriodSelection(_dayOfWeek, periods));
+                            .pop(_PeriodSelection(days, periods));
                       },
-                child: Text('确定（已选 ${_periods.length} 节）'),
+                child: Text(
+                  '确定（已选 ${_days.length} 天、${_periods.length} 节）',
+                ),
               ),
             ),
           ],

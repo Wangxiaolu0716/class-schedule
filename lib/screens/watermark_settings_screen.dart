@@ -45,6 +45,22 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
           ),
           _buildPreview(),
           _sectionHeader('水印参数'),
+          // 文案自己填：不同版本/不同用途的水印内容不一样
+          ListTile(
+            title: const Text('水印文字'),
+            subtitle: Text(
+              _settings.text.isEmpty ? '（空，水印不会显示任何字）' : _settings.text,
+            ),
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: _editText,
+          ),
+          // 默认关闭；要用水印时从这里打开，打开后整屏立刻盖上去
+          SwitchListTile(
+            title: const Text('显示水印'),
+            subtitle: const Text('默认关闭，只在这个隐藏页里开关'),
+            value: _settings.enabled,
+            onChanged: (value) => _apply(_settings.copyWith(enabled: value)),
+          ),
           _buildSlider(
             title: '字号',
             value: _settings.fontSize,
@@ -78,6 +94,7 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
               children: [
                 TextButton.icon(
                   onPressed: () => _apply(WatermarkSettings.defaults),
+                  // 恢复默认会把水印一并关掉，这是刻意的：默认就是没有水印
                   icon: const Icon(Icons.restart_alt),
                   label: const Text('恢复默认'),
                 ),
@@ -94,6 +111,38 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
     );
   }
 
+  /// 改水印文案。留空就等于关掉水印显示的那行字。
+  Future<void> _editText() async {
+    final controller = TextEditingController(text: _settings.text);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('水印文字'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 30,
+          decoration: const InputDecoration(
+            hintText: '例如：内部测试 / @你的名字',
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (text == null || !mounted) return;
+    _apply(_settings.copyWith(text: text));
+  }
+
   /// 预览：直接用同一套画笔，看到的就是屏幕上真实的效果。
   ///
   /// 底色与文字跟着主题走，否则深色模式下这块预览会亮得像贴了张白纸。
@@ -106,7 +155,8 @@ class _WatermarkSettingsScreenState extends State<WatermarkSettingsScreen> {
         child: SizedBox(
           height: 190,
           child: AppWatermark(
-            settings: _settings,
+            // 预览强制打开：水印开关关着时也要能看清字号/疏密的效果
+            settings: _settings.copyWith(enabled: true),
             child: Container(
               color: scheme.surfaceContainerHighest,
               alignment: Alignment.center,

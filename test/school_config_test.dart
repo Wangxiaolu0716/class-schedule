@@ -4,15 +4,16 @@ import 'package:nbcc_schedule/import/school_picker.dart';
 
 void main() {
   group('学校配置', () {
-    test('本校配置：端点齐全、走自动导入、固定移动端 UA', () {
+    test('本校兜底配置：端点齐全、走自动导入、固定移动端 UA', () {
       final school = nbccSchool;
 
       expect(school.id, 'nbcc');
       expect(school.autoImport, isTrue);
-      expect(school.loginUrl, startsWith('https://'));
+      expect(school.loginUrl, 'https://ids.nbcc.cn/');
+      expect(school.fallbackLoginUri!.host, 'webvpn.nbcc.edu.cn');
       expect(school.hasCourseTablePage, isTrue);
-      expect(school.courseTablePageUri!.host, 'jwgl.webvpn.nbcc.cn');
-      expect(school.courseTableActionPath, startsWith('/'));
+      expect(school.courseTablePageUri!.host, 'webvpn.nbcc.edu.cn');
+      expect(school.courseTableActionPath, eamsCourseTableActionPath);
       expect(school.userAgent, androidMobileUserAgent);
       expect(school.startDate, isNotNull);
     });
@@ -40,7 +41,10 @@ void main() {
 
   group('教务网址补全与校验', () {
     test('缺协议头时补成 https', () {
-      expect(normalizeSchoolUrl('jw.example.edu.cn'), 'https://jw.example.edu.cn');
+      expect(
+        normalizeSchoolUrl('jw.example.edu.cn'),
+        'https://jw.example.edu.cn',
+      );
     });
 
     test('已经带协议的地址原样保留，含参数也不动', () {

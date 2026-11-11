@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import '../models/course.dart';
+import '../models/school_periods.dart';
+import '../models/table_config.dart';
 
 /// 交给 AI 的提示词。
 ///
@@ -35,6 +37,36 @@ const String aiImportPrompt = '''
     "weekday": "星期一",
     "fixWeeks": "6-7周",
     "courseNumbers": "1-2节"
+  }
+]''';
+
+/// 作息时间表版提示词：让 AI 把作息图读成 [AiPeriodsParser] 认的 JSON。
+///
+/// 字段名同样与解析器一一对应，改这里就要同步改那边。
+const String aiPeriodPrompt = '''
+你是作息时间表识别助手。我会给你一张学校的作息时间表（上课时间表）图片，请严格按下述要求输出：
+
+1) 识别规则
+- 只要「上课时间」，也就是第几节从几点上到几点
+- 不要理会上下班时间、教师签到时间、假期与考试周的安排
+- 每个数字都照抄图上写的，不要推算、不要凑整、不要按常见作息「修正」
+- 图里若分成两栏（如夏令时 / 冬令时），或按校区各有一份，每份单独输出
+
+2) 输出要求
+- 只输出 JSON 数组，不要任何解释文本
+- 每份作息一个对象，字段：label（这份叫做什么，如「夏令时间」）、times（各节次数组）
+- times 里每条字段：period（第几节，整数）、start（开始时间）、end（结束时间）
+- 时间统一写成 HH:mm，例如 08:15
+- 最终结果请使用 ```json 代码块包裹，便于复制
+
+3) 输出示例
+[
+  {
+    "label": "夏令时间",
+    "times": [
+      {"period": 1, "start": "08:15", "end": "09:00"},
+      {"period": 2, "start": "09:05", "end": "09:50"}
+    ]
   }
 ]''';
 
@@ -309,4 +341,175 @@ class AiCourseJsonParser {
         if (value.isOdd == parity) value,
     ];
   }
+}
+
+/// 一次 AI 识别的作息结果：一份或多份（图里分夏令/冬令、分院区就会有多个）
+class AiPeriodsResult {
+  const AiPeriodsResult({required this.presets, this.skipped = const []});
+
+  final List<PeriodPreset> presets;
+
+  /// 认不出、被跳过的条目及原因
+  final List<String> skipped;
+}
+
+/// 把大模型返回的作息 JSON 转成作息预设。
+///
+/// 与 [AiCourseJsonParser] 同一套路，只是换成作息：用户把作息表和
+/// [aiPeriodPrompt] 交给 AI，拿回 JSON 再粘进 App。这条路给的是没有内置作息
+/// 的学校——不必为每所学校单独适配，也不用 App 联网。
+///
+/// 注意：AI 从图片里抄时间是会抄错的，解析只负责如实转成节次时间，
+/// 套用之前一律由界面把每节时间摊开让用户过一眼（见课表设置的「套用学校作息」）。
+class AiPeriodsParser {
+  const AiPeriodsParser();
+
+  /// 节次上限，防止 AI 写出「第 9999 节」
+  static const int _maxPeriod = 40;
+
+  /// 认这段回复里的节次字段名
+  static const List<String> _startKeys = [
+    'start', 'startTime', 'begin', 'from', '开始', '开始时间', '起',
+  ];
+  static const List<String> _endKeys = [
+    'end', 'endTime', 'finish', 'to', '结束', '结束时间', '止',
+  ];
+
+  AiPeriodsResult parse(String raw) {
+    final items = AiCourseJsonParser._extractItems(raw);
+    if (items.isEmpty) {
+      throw const AiImportException('AI 返回的内容是空的，请让它重新识别一次');
+    }
+
+    final skipped = <String>[];
+
+    // 有的 AI 不给分组，直接把「一节一条」的数组给回来，那就整段当成一份作息
+    // shortcut: 这种给法带不出名字（它是从分组对象里被拆出来的），一律叫「AI 识别的作息」；
+    // 等真的有人抱怨名字，再去改 _extractItems 把外层对象一起带出来
+    if (_isTimeRow(items.first)) {
+      final times = _parseTimes(items, skipped, 'AI 识别的作息');
+      if (times.isEmpty) throw AiImportException(_nothingFound(skipped));
+      return AiPeriodsResult(
+        presets: [PeriodPreset(label: 'AI 识别的作息', times: times)],
+        skipped: skipped,
+      );
+    }
+
+    final presets = <PeriodPreset>[];
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      if (item is! Map) {
+        skipped.add('第 ${i + 1} 份不是作息对象，已跳过');
+        continue;
+      }
+
+      final label = AiCourseJsonParser._text(
+        item,
+        const ['label', 'name', 'title', '名称', '作息', '作息名称', '时段'],
+      );
+      final who = label.isEmpty ? '第 ${i + 1} 份' : label;
+      final times = _parseTimes(_rowsOf(item), skipped, who);
+      if (times.isEmpty) {
+        skipped.add('$who：一节时间都没读出来，已跳过');
+        continue;
+      }
+      presets.add(
+        PeriodPreset(label: label.isEmpty ? 'AI 识别的作息' : label, times: times),
+      );
+    }
+
+    if (presets.isEmpty) throw AiImportException(_nothingFound(skipped));
+    return AiPeriodsResult(presets: presets, skipped: skipped);
+  }
+
+  /// 这份作息里的节次数组；没有嵌套数组时返回空列表
+  static List<Object?> _rowsOf(Map item) {
+    for (final key in const ['times', 'periods', 'list', '节次', '时间']) {
+      final value = item[key];
+      if (value is List) return value;
+    }
+    return const [];
+  }
+
+  /// 是不是「一节一条」那种行（自身带节次或时间，而不是包着 times 的分组对象）
+  static bool _isTimeRow(Object? item) {
+    if (item is! Map) return false;
+    if (_rowsOf(item).isNotEmpty) return false;
+    return ['period', 'index', 'no', 'start', 'startTime', '节次', '开始']
+        .any((key) => item[key] != null);
+  }
+
+  /// 把一串节次对象转成 [PeriodTime]，认不出的逐条记原因
+  static List<PeriodTime> _parseTimes(
+    List<Object?> rows,
+    List<String> skipped,
+    String who,
+  ) {
+    final byPeriod = <int, PeriodTime>{};
+
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      if (row is! Map) {
+        skipped.add('$who 第 ${i + 1} 条不是节次对象，已跳过');
+        continue;
+      }
+
+      final period = _parsePeriod(
+        AiCourseJsonParser._text(
+          row,
+          const ['period', 'index', 'no', '节次', '第几节', '节'],
+        ),
+      );
+      final start = _parseClock(AiCourseJsonParser._text(row, _startKeys));
+      final end = _parseClock(AiCourseJsonParser._text(row, _endKeys));
+      if (period == null || start == null || end == null) {
+        skipped.add('$who 第 ${i + 1} 条没认出节次或时间，已跳过');
+        continue;
+      }
+      if (_minutes(end) <= _minutes(start)) {
+        // 结束早于开始基本是抄错了，宁可跳过也不写进课表
+        skipped.add('$who 第 $period 节：结束 $end 早于开始 $start，已跳过');
+        continue;
+      }
+
+      // 同一节出现两次（AI 常常把两套作息串在一起）时留第一条
+      byPeriod.putIfAbsent(
+        period,
+        () => PeriodTime(period: period, start: start, end: end),
+      );
+    }
+
+    final periods = byPeriod.keys.toList()..sort();
+    return [for (final p in periods) byPeriod[p]!];
+  }
+
+  /// 节次：认「1」「第 1 节」「1-2」中的第一个数字
+  static int? _parsePeriod(String raw) {
+    final match = RegExp(r'\d+').firstMatch(raw);
+    if (match == null) return null;
+    final value = int.parse(match.group(0)!);
+    return value >= 1 && value <= _maxPeriod ? value : null;
+  }
+
+  /// 时间：认 `08:15`、`8:15`、`08：15`（全角冒号）。
+  ///
+  /// 分钟要求正好两位——「8:5」这种多半是抄漏了，宁可当认不出报出来。
+  static String? _parseClock(String raw) {
+    final match = RegExp(r'(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)').firstMatch(raw);
+    if (match == null) return null;
+    final hour = int.parse(match.group(1)!);
+    final minute = int.parse(match.group(2)!);
+    if (hour > 23 || minute > 59) return null;
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  }
+
+  static int _minutes(String clock) {
+    final parts = clock.split(':');
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+  }
+
+  /// 一节都没读出来时的提示：带上第一条原因，用户才知道该让 AI 补什么
+  static String _nothingFound(List<String> skipped) => skipped.isEmpty
+      ? '这些内容里没读出一节时间，请让 AI 重新识别一次'
+      : '这些内容里没读出一节时间：${skipped.first}';
 }

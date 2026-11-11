@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/custom_entry.dart';
 import '../models/table_config.dart';
+import 'school_config.dart';
 
 /// 课表本地存储：原始课表 HTML 与课表配置。
 ///
@@ -15,9 +16,11 @@ class CourseCache {
 
   static const String _fileName = 'course_table.html';
   static const String _configFileName = 'table_config.json';
+  static const String _dismissedFileName = 'dismissed_notices.json';
   static const String _manualUrlFileName = 'manual_entry_url.txt';
   static const String _customCourseFileName = 'custom_courses.json';
   static const String _customScheduleFileName = 'custom_schedules.json';
+  static const String _lastSchoolFileName = 'last_school.json';
 
   Future<Directory> _documentsDir() => getApplicationDocumentsDirectory();
 
@@ -62,6 +65,31 @@ class CourseCache {
     return null;
   }
 
+  /// 记录被用户关闭过的公告 id。
+  ///
+  /// 关闭后不再显示；管理员编辑该公告会更新 updatedAt，
+  /// 但这里只按 id 记，所以同一 id 的新内容也不会重复打扰用户。
+  Future<void> saveDismissedNotices(Set<String> ids) async {
+    final dir = await _documentsDir();
+    await File('${dir.path}/$_dismissedFileName')
+        .writeAsString(jsonEncode(ids.toList()));
+  }
+
+  Future<Set<String>> loadDismissedNotices() async {
+    final dir = await _documentsDir();
+    final file = File('${dir.path}/$_dismissedFileName');
+    if (!await file.exists()) return <String>{};
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is List) {
+        return decoded.whereType<String>().toSet();
+      }
+    } catch (_) {
+      // 文件损坏时按「都没关闭过」处理
+    }
+    return <String>{};
+  }
+
   /// 记住手动导课时填过的教务网址。
   ///
   /// 「其它学校」的用户每次重新导入都要手打地址太烦，存一份下次预填。
@@ -76,6 +104,28 @@ class CourseCache {
     if (!await file.exists()) return null;
     final text = (await file.readAsString()).trim();
     return text.isEmpty ? null : text;
+  }
+
+  /// 上次导入用的学校。静默刷新靠它知道该去哪个入口、请求哪个接口。
+  Future<SchoolConfig?> loadLastSchool() async {
+    final dir = await _documentsDir();
+    final file = File('${dir.path}/$_lastSchoolFileName');
+    if (!await file.exists()) return null;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map<String, dynamic>) {
+        return SchoolConfig.fromJson(decoded);
+      }
+    } catch (_) {
+      // 坏文件等于没存过
+    }
+    return null;
+  }
+
+  Future<void> saveLastSchool(SchoolConfig school) async {
+    final dir = await _documentsDir();
+    await File('${dir.path}/$_lastSchoolFileName')
+        .writeAsString(jsonEncode(school.toJson()));
   }
 
   /// 自建课程 / 日程。
@@ -164,7 +214,8 @@ class CourseCache {
   }
 
   Future<Directory> _debugDir() async {
-    final base = await getExternalStorageDirectory() ??
+    final base =
+        await getExternalStorageDirectory() ??
         await getApplicationDocumentsDirectory();
     final dir = Directory('${base.path}/debug');
     await dir.create(recursive: true);

@@ -9,12 +9,16 @@ import 'package:path_provider/path_provider.dart';
 /// 三指轻敲屏幕三次可以进入隐藏页自行调整，调完落在本地。
 class WatermarkSettings {
   const WatermarkSettings({
+    this.enabled = false,
     this.text = '测试中 @王小路 制作',
     this.fontSize = 15,
     this.spacing = 260,
     this.opacity = 0.07,
     this.angle = -0.32,
   });
+
+  /// 是否启用。默认关：正式版不该带水印，功能留在隐藏页里随时可开
+  final bool enabled;
 
   /// 水印文案
   final String text;
@@ -42,6 +46,7 @@ class WatermarkSettings {
   static const WatermarkSettings defaults = WatermarkSettings();
 
   WatermarkSettings copyWith({
+    bool? enabled,
     String? text,
     double? fontSize,
     double? spacing,
@@ -49,6 +54,7 @@ class WatermarkSettings {
     double? angle,
   }) {
     return WatermarkSettings(
+      enabled: enabled ?? this.enabled,
       text: text ?? this.text,
       fontSize: fontSize ?? this.fontSize,
       spacing: spacing ?? this.spacing,
@@ -58,16 +64,18 @@ class WatermarkSettings {
   }
 
   Map<String, dynamic> toJson() => {
-        'text': text,
-        'fontSize': fontSize,
-        'spacing': spacing,
-        'opacity': opacity,
-        'angle': angle,
-      };
+    'enabled': enabled,
+    'text': text,
+    'fontSize': fontSize,
+    'spacing': spacing,
+    'opacity': opacity,
+    'angle': angle,
+  };
 
   static WatermarkSettings fromJson(Map<String, dynamic> json) {
     final defaults = WatermarkSettings.defaults;
     return WatermarkSettings(
+      enabled: json['enabled'] as bool? ?? defaults.enabled,
       text: json['text'] as String? ?? defaults.text,
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? defaults.fontSize,
       spacing: (json['spacing'] as num?)?.toDouble() ?? defaults.spacing,
@@ -80,6 +88,7 @@ class WatermarkSettings {
   @override
   bool operator ==(Object other) =>
       other is WatermarkSettings &&
+      other.enabled == enabled &&
       other.text == text &&
       other.fontSize == fontSize &&
       other.spacing == spacing &&
@@ -87,7 +96,8 @@ class WatermarkSettings {
       other.angle == angle;
 
   @override
-  int get hashCode => Object.hash(text, fontSize, spacing, opacity, angle);
+  int get hashCode =>
+      Object.hash(enabled, text, fontSize, spacing, opacity, angle);
 }
 
 /// 水印参数的本地存储
