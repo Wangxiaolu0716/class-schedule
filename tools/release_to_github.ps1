@@ -64,11 +64,27 @@ function Write-Warn($text) { Write-Host "    $text" -ForegroundColor Yellow }
 # ---------------------------------------------------------------- 取令牌
 
 function Get-GitHubToken {
-    # git credential fill 从标准输入读「要找哪个 host 的凭据」，
-    # 再把用户名密码打回标准输出。这里只要 password，且绝不打印出来。
-    $probe = "protocol=https`nhost=github.com`n`n"
-    $lines = $probe | & git credential fill 2>$null
-    if ($LASTEXITCODE -ne 0) { throw '调用 git credential fill 失败' }
+    # 首选 gh：装了并登录过就现成有令牌，比翻凭据管理器可靠。
+    # （PowerShell 5.1 把字符串管道给原生命令时补不出结尾空行，
+    #   `$probe | git credential fill` 会报「missing protocol field」，
+    #   拿不到令牌这条路以前一直静默失败。）
+    $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
+    if ($gh) {
+        $fromGh = & $gh auth token 2>$null
+        if ($LASTEXITCODE -eq 0 -and $fromGh) {
+            return (@($fromGh) | Select-Object -First 1).Trim()
+        }
+    }
+
+    # 兜底：落到临时文件，用 cmd 重定向当标准输入，才拿得到完整请求
+    $probeFile = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($probeFile, "protocol=https`nhost=github.com`n`n", [Text.Encoding]::ASCII)
+        $lines = & cmd /c "git credential fill < `"$probeFile`"" 2>$null
+        if ($LASTEXITCODE -ne 0) { throw '调用 git credential fill 失败' }
+    } finally {
+        Remove-Item $probeFile -ErrorAction SilentlyContinue
+    }
 
     foreach ($line in $lines) {
         if ($line -like 'password=*') {
@@ -76,7 +92,7 @@ function Get-GitHubToken {
             if ($token) { return $token }
         }
     }
-    throw 'git 凭据管理器里没有 github.com 的令牌，请先执行一次 git push 让 Git 记住凭据'
+    throw 'git 凭据管理器里没有 github.com 的令牌，请先执行一次 gh auth login 或 git push'
 }
 
 # ---------------------------------------------------------------- 版本号
